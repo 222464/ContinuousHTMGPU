@@ -23,7 +23,7 @@ namespace htm {
 			int _cellsInColumn;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _lateralConnectionRadius(4), _cellsInColumn(4)
+				: _width(16), _height(16), _receptiveFieldRadius(8), _lateralConnectionRadius(6), _cellsInColumn(4)
 			{}
 		};
 	private:

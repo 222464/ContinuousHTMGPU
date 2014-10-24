@@ -21,16 +21,16 @@ int main() {
 
 	std::vector<htm::HTMRL::LayerDesc> layerDescs(1);
 
-	layerDescs[0]._width = 128;
-	layerDescs[0]._height = 128;
+	layerDescs[0]._width = 64;
+	layerDescs[0]._height = 64;
 
-	//layerDescs[1]._width = 32;
-	//layerDescs[1]._height = 32;
+	//layerDescs[1]._width = 64;
+	//layerDescs[1]._height = 64;
 
-	//layerDescs[2]._width = 32;
-	//layerDescs[2]._height = 32;
+	//layerDescs[2]._width = 64;
+	//layerDescs[2]._height = 64;
 
-	htmrl.createRandom(cs, program, 128, 128, layerDescs, -0.1f, 0.1f, generator);
+	htmrl.createRandom(cs, program, 64, 64, layerDescs, -0.1f, 0.1f, generator);
 
 	/*htm::HTMFeatureExtractor fExt;
 
@@ -40,7 +40,7 @@ int main() {
 	layerDescs[0]._height = 128;
 	layerDescs[0]._receptiveFieldRadius = 2;
 
-	layerDescs[1]._width = 64;
+	layerDescs[1]._width = 64; 
 	layerDescs[1]._height = 64;
 	layerDescs[1]._receptiveFieldRadius = 2;
 
@@ -49,8 +49,8 @@ int main() {
 	layerDescs[2]._receptiveFieldRadius = 2;*/
 
 	float t = 0;
-
-	float dotRadius = 4.0f;
+	 
+	float dotRadius = 16.0f;
 
 	bool quit = false;
 
@@ -85,18 +85,18 @@ int main() {
 			htmrl.exportCellData(cs, "data");
 		}
 
-		float dotX = std::cos(t * 4.0f) * 15.0f + 64.0f;
-		float dotY = 64.0f;
+		float dotX = 32.0f;// std::cos(t * 4.0f) * 15.0f + 64.0f;
+		float dotY = 32.0f;
 
-		for (int x = 0; x < 128; x++)
-		for (int y = 0; y < 128; y++) {
+		for (int x = 0; x < 64; x++)
+		for (int y = 0; y < 64; y++) {
 			//float r = inImage.getPixel(x, y).r / 255.0f;
 			//float g = inImage.getPixel(x, y).g / 255.0f;
 			//float b = inImage.getPixel(x, y).b / 255.0f;
 
 			float dist = std::sqrt(static_cast<float>(std::pow(dotX - x, 2) + std::pow(dotY - y, 2)));
 
-			float greyScale = std::max<float>(0.0f, std::min<float>(1.0f, (dotRadius - dist) / dotRadius));
+			float greyScale = std::max<float>(0.0f, std::min<float>(1.0f, (dotRadius - dist) / dotRadius)) * (std::cos(t) + 0.5f + 0.5f);
 
 			htmrl.setInput(x, y, greyScale);
 		}
@@ -105,7 +105,7 @@ int main() {
 			for (int i = 0; i < 1; i++)
 				htmrl.step(cs, 0.05f, 0.05f);
 
-			t += 0.1f;
+			t += 0.05f;
 
 			if (t > 6.28f)
 				t = 0.0f;

@@ -6,7 +6,8 @@ constant sampler_t unnormalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_FAL
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float columnIntensity = 4.0f;
+constant float activationIntensity = 16.0f;
+constant float columnIntensity = 16.0f;
 constant float cellStateIntensity = 16.0f;
 constant float cellPredictionIntensity = 4.0f;
 
@@ -78,12 +79,14 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesPrev, write_only
 		float weight = read_imagef(columnWeights, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 		float prevState = read_imagef(columnStatesPrev, normalizedClampedNearestSampler, inputPositionNormalized).x;
 		
-		sum += weight * prevState;
+		float difference = weight - prevState;
+		
+		sum += difference * difference;
 		
 		weightIndex++;
 	}
 	
-	float activation = fmin(1.0f, fmax(0.0f, sum));
+	float activation = exp(-sum * activationIntensity);
 	
 	write_imagef(columnActivations, columnPosition, (float4)(activation, activation, activation, activation));
 }
@@ -92,7 +95,7 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 layerCenterPositionNormalized = (float2)(columnPosition.x * layerSizeInv.x, columnPosition.y * layerSizeInv.y);
 
-	float fmaximum = 0.0f;
+	float maximum = 0.0f;
 
 	int weightIndex = 0;
 	
@@ -102,14 +105,14 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only
 		
 		float activation = read_imagef(columnActivations, normalizedClampedNearestSampler, layerPositionNormalized).x;
 		
-		fmaximum = fmax(fmaximum, activation);
-
+		maximum = fmax(maximum, activation);
+		
 		weightIndex++;
 	}
 	
 	float thisActivation = read_imagef(columnActivations, normalizedClampedNearestSampler, layerCenterPositionNormalized).x;
 	
-	float inhibitedResult = exp((thisActivation - fmaximum) * columnIntensity) * thisActivation;
+	float inhibitedResult = exp((thisActivation - maximum) * columnIntensity);
 
 	write_imagef(columnStates, columnPosition, (float4)(inhibitedResult, inhibitedResult, inhibitedResult, inhibitedResult));
 }
