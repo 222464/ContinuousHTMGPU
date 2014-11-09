@@ -345,6 +345,11 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 		float _x, _y;
 	};
 
+	Int2 downsampleSize;
+
+	downsampleSize._x = 2;
+	downsampleSize._y = 2;
+
 	for (int l = 0; l < _layers.size(); l++) {
 		_layerRetrievePartialQSumsKernel.setArg(0, _layers[l]._cellStates);
 		_layerRetrievePartialQSumsKernel.setArg(1, _layers[l]._cellQWeightsPrev);
@@ -363,7 +368,7 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 		while (width > 1 || height > 1) {
 			_layerDownsampleKernel.setArg(0, *pPing);
 			_layerDownsampleKernel.setArg(1, *pPong);
-			_layerDownsampleKernel.setArg(2, 2);
+			_layerDownsampleKernel.setArg(2, downsampleSize);
 
 			cs.getQueue().enqueueNDRangeKernel(_layerDownsampleKernel, cl::NullRange, cl::NDRange(width, height));
 
