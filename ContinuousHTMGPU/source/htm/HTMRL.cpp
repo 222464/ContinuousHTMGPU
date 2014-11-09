@@ -347,8 +347,9 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 
 	for (int l = 0; l < _layers.size(); l++) {
 		_layerRetrievePartialQSumsKernel.setArg(0, _layers[l]._cellStates);
-		_layerRetrievePartialQSumsKernel.setArg(1, _qSummationBuffer);
-		_layerRetrievePartialQSumsKernel.setArg(2, _layerDescs[l]._cellsInColumn);
+		_layerRetrievePartialQSumsKernel.setArg(1, _layers[l]._cellQWeightsPrev);
+		_layerRetrievePartialQSumsKernel.setArg(2, _qSummationBuffer);
+		_layerRetrievePartialQSumsKernel.setArg(3, _layerDescs[l]._cellsInColumn);
 
 		cs.getQueue().enqueueNDRangeKernel(_layerRetrievePartialQSumsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 
@@ -477,6 +478,7 @@ void HTMRL::learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float cel
 		_layerUpdateQWeightsKernel.setArg(2, _layers[l]._cellQWeights);
 		_layerUpdateQWeightsKernel.setArg(3, tdError);
 		_layerUpdateQWeightsKernel.setArg(4, cellQWeightEligibilityDecay);
+		_layerUpdateQWeightsKernel.setArg(5, _layerDescs[l]._cellsInColumn);
 
 		cs.getQueue().enqueueNDRangeKernel(_layerUpdateQWeightsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 

@@ -199,8 +199,6 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 		fmaxVectorMagnitude = fmax(fmaxVectorMagnitude, cellVectorMagnitudes[ci]);*/
 	}
 	
-	float sum = 0.0f;
-	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float prediction = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
@@ -313,8 +311,8 @@ void kernel layerColumnPrediction(read_only image3d_t cellPredictions, read_only
 	write_imagef(columnPredictions, columnPosition, (float4)(output, output, output, output));
 }
 
-void kernel layerRetrievePartialQSums(read_only image3d_t cellStates, read_only image3d_t cellQWeights, write_only image2d_t qSummationBuffer, int cellsInColumn) {
-	int2 columnPosition = (int3)(get_global_id(0), get_global_id(1));
+void kernel layerRetrievePartialQSums(read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image2d_t qSummationBuffer, int cellsInColumn) {
+	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
 	float sum = 0.0f;
 	
@@ -330,7 +328,7 @@ void kernel layerRetrievePartialQSums(read_only image3d_t cellStates, read_only 
 }
 
 void kernel layerDownsample(read_only image2d_t qSummationBuffer, write_only image2d_t downsampledQSummationBuffer, int2 downsampleSize) {
-	int2 position = (int3)(get_global_id(0), get_global_id(1));
+	int2 position = (int2)(get_global_id(0), get_global_id(1));
 	
 	float sum = 0.0f;
 	
@@ -344,13 +342,11 @@ void kernel layerDownsample(read_only image2d_t qSummationBuffer, write_only ima
 	write_imagef(downsampledQSummationBuffer, (int2)(position.x, position.y), (float4)(sum, sum, sum, sum));
 }
 
-void kernel layerUpdateQWeights(read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, read_only image3d_t cellQWeights, float tdError, float eligibilityDecay) {
-	int2 columnPosition = (int3)(get_global_id(0), get_global_id(1));
-	
-	float sum = 0.0f;
+void kernel layerUpdateQWeights(read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image3d_t cellQWeights, float tdError, float eligibilityDecay, int cellsInColumn) {
+	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float2 cellQWeightPrev = read_imagef(cellQWeightPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
+		float2 cellQWeightPrev = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 	
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 	
