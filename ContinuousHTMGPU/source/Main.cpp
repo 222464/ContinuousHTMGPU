@@ -50,7 +50,7 @@ int main() {
 
 	float t = 0;
 	 
-	float dotRadius = 16.0f;
+	float dotRadius = 4.0f;
 
 	bool quit = false;
 
@@ -85,7 +85,7 @@ int main() {
 			htmrl.exportCellData(cs, "data");
 		}
 
-		float dotX = 32.0f;// std::cos(t * 4.0f) * 15.0f + 64.0f;
+		float dotX = std::cos(t * 4.0f) * 15.0f + 32.0f;
 		float dotY = 32.0f;
 
 		for (int x = 0; x < 64; x++)
@@ -96,14 +96,14 @@ int main() {
 
 			float dist = std::sqrt(static_cast<float>(std::pow(dotX - x, 2) + std::pow(dotY - y, 2)));
 
-			float greyScale = std::max<float>(0.0f, std::min<float>(1.0f, (dotRadius - dist) / dotRadius)) * (std::cos(t) + 0.5f + 0.5f);
+			float greyScale = std::max<float>(0.0f, std::min<float>(1.0f, (dotRadius - dist) / dotRadius));
 
 			htmrl.setInput(x, y, greyScale);
 		}
 
 		if (!sf::Keyboard::isKeyPressed(sf::Keyboard::L)) {
 			for (int i = 0; i < 1; i++)
-				htmrl.step(cs, 0.05f, 0.05f);
+				htmrl.step(cs, 0.01f, 0.01f, 0.01f);
 
 			t += 0.05f;
 

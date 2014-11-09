@@ -23,16 +23,13 @@ namespace htm {
 			int _cellsInColumn;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(8), _lateralConnectionRadius(6), _cellsInColumn(4)
+				: _width(16), _height(16), _receptiveFieldRadius(8), _lateralConnectionRadius(6), _cellsInColumn(5)
 			{}
 		};
 	private:
 		struct Layer {
 			cl::Image3D _columnWeightsPrev;
 			cl::Image3D _columnWeights;
-
-			cl::Image3D _interlayerWeightsPrev;
-			cl::Image3D _interlayerWeights;
 
 			cl::Image2D _columnActivations;
 
@@ -50,6 +47,9 @@ namespace htm {
 
 			cl::Image2D _columnPredictionsPrev;
 			cl::Image2D _columnPredictions;
+
+			cl::Image3D _cellQWeightsPrev;
+			cl::Image3D _cellQWeights;
 		};
 
 		int _inputWidth, _inputHeight;
@@ -64,23 +64,37 @@ namespace htm {
 		cl::Kernel _layerCellPredictKernel;
 		cl::Kernel _layerColumnWeightUpdateKernel;
 		cl::Kernel _layerColumnPredictionKernel;
-		cl::Kernel _layerReconstructPredictionKernel;
+		cl::Kernel _layerRetrievePartialQSumsKernel;
+		cl::Kernel _layerDownsampleKernel;
+		cl::Kernel _layerUpdateQWeightsKernel;
 
 		std::vector<float> _input;
+
+		std::vector<bool> _actionMask;
+
 		std::vector<float> _output;
 
-		std::vector<float> _SDR;
-
-		std::vector<float> _prediction;
+		float _qBias;
+		float _qEligibility;
+		float _prevQ;
 
 		cl::Image2D _inputImage;
 
-		cl::Image2D _reconstruction;
+		cl::Image2D _qSummationBuffer;
+		cl::Image2D _halfQSummationBuffer;
+
+		void stepBegin();
+
+		void activate(std::vector<float> &input, sys::ComputeSystem &cs);
+
+		float retrieveQ(sys::ComputeSystem &cs);
+
+		void learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float tdError, float cellQWeightEligibilityDecay);
 
 	public:
-		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, float minInitWeight, float maxInitWeight, std::mt19937 &generator);
+		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha);
+		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float cellQWeightEligibilityDecay, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
@@ -108,22 +122,6 @@ namespace htm {
 
 		float getOutput(int x, int y) const {
 			return getOutput(x + y * _layerDescs.back()._width);
-		}
-
-		float getSDR(int i) const {
-			return _SDR[i];
-		}
-
-		float getSDR(int x, int y) const {
-			return getSDR(x + y * _layerDescs.back()._width);
-		}
-
-		float getPrediction(int i) const {
-			return _prediction[i];
-		}
-
-		float getPrediction(int x, int y) const {
-			return getPrediction(x + y * _layerDescs.back()._width);
 		}
 
 		void exportCellData(sys::ComputeSystem &cs, const std::string &rootName);

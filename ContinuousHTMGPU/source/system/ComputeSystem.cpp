@@ -6,7 +6,7 @@ using namespace sys;
 
 bool ComputeSystem::create(DeviceType type, bool createFromGLContext) {
 	if (type == _none) {
-#ifdef HTM_DEBUG
+#ifdef SYS_DEBUG
 		std::cout << "No OpenCL context created." << std::endl;
 #endif
 		return true;
@@ -16,7 +16,7 @@ bool ComputeSystem::create(DeviceType type, bool createFromGLContext) {
 	cl::Platform::get(&allPlatforms);
 
 	if (allPlatforms.empty()) {
-#ifdef HTM_DEBUG
+#ifdef SYS_DEBUG
 		std::cout << "No platforms found. Check your OpenCL installation." << std::endl;
 #endif
 		return false;
@@ -41,7 +41,7 @@ bool ComputeSystem::create(DeviceType type, bool createFromGLContext) {
 	}
 
 	if (allDevices.empty()) {
-#ifdef HTM_DEBUG
+#ifdef SYS_DEBUG
 		std::cout << " No devices found. Check your OpenCL installation." << std::endl;
 #endif
 		return false;
@@ -49,11 +49,11 @@ bool ComputeSystem::create(DeviceType type, bool createFromGLContext) {
 
 	_device = allDevices.front();
 
-#ifdef HTM_DEBUG
+#ifdef SYS_DEBUG
 	std::cout << "Using device: " << _device.getInfo<CL_DEVICE_NAME>() << std::endl;
 #endif
 	
-#if(HTM_ALLOW_CL_GL_CONTEXT)
+#if(SYS_ALLOW_CL_GL_CONTEXT)
 	if (createFromGLContext) {
 #if defined (__APPLE__) || defined(MACOSX)
 		CGLContextObj kCGLContext = CGLGetCurrentContext();

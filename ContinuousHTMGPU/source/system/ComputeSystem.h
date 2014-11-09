@@ -3,7 +3,7 @@
 #include <system/Uncopyable.h>
 #include <CL/cl.hpp>
 
-#define HTM_ALLOW_CL_GL_CONTEXT 0
+#define SYS_ALLOW_CL_GL_CONTEXT 0
 
 namespace sys {
 	class ComputeSystem : private Uncopyable {
