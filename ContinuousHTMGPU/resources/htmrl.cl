@@ -6,14 +6,14 @@ constant sampler_t unnormalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_FAL
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 8.0f;
+constant float activationIntensity = 32.0f;
 constant float columnIntensity = 64.0f;
-constant float cellStateIntensity = 8.0f;
-constant float cellPredictionIntensity = 8.0f;
+constant float cellStateIntensity = 2.0f;
+constant float cellPredictionIntensity = 1.0f;
 constant float minActivation = 0.0001f;
-constant float minLearningThreshold = 0.0f;
-constant float minDistance = 0.01f;
-constant float widthScalar = 0.4f;
+constant float minLearningThreshold = 0.05f;
+constant float minDistance = 0.1f;
+constant float widthScalar = 1.0f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -98,7 +98,9 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesPrev, write_only
 	write_imagef(columnActivations, columnPosition, (float4)(activation, activation, activation, activation));
 }
 
-void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only image2d_t columnStates, float2 layerSizeInv, int2 receptiveFieldRadius, float2 layerReceptiveFieldStep) {
+void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only image2d_t columnStates, float2 layerSizeInv, int2 receptiveFieldRadius, float2 layerReceptiveFieldStep, uint2 seed) {
+	uint2 seedValue = seed + (uint2)(get_global_id(0), get_global_id(1)) * 50;
+	
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 layerCenterPositionNormalized = (float2)(columnPosition.x * layerSizeInv.x, columnPosition.y * layerSizeInv.y);
 
@@ -123,7 +125,14 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only
 	
 	float thisActivation = read_imagef(columnActivations, normalizedClampedNearestSampler, layerCenterPositionNormalized).x;
 	
-	float inhibitedResult = exp((thisActivation - maximum) / fmax(minActivation, maximum - average) * columnIntensity);
+	float inhibitedResult;
+	
+	float difference = maximum - average;
+
+	if (fabs(difference) < minDistance)
+		inhibitedResult = randFloat(&seedValue) < 1.0f / (receptiveFieldRadius.x * receptiveFieldRadius.y) ? 1.0f : 0.0f;
+	else
+		inhibitedResult = exp((thisActivation - maximum) / fmax(minActivation, maximum - average) * columnIntensity);
 
 	write_imagef(columnStates, columnPosition, (float4)(inhibitedResult, inhibitedResult, inhibitedResult, inhibitedResult));
 }
@@ -280,7 +289,7 @@ void kernel layerColumnPrediction(read_only image3d_t cellPredictions, read_only
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float prediction = read_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 	
-		maxPrediction = maxf(maxPrediction, prediction);
+		maxPrediction = fmax(maxPrediction, prediction);
 	}
 	
 	float output = maxPrediction;

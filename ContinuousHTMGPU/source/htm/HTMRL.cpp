@@ -224,7 +224,7 @@ void HTMRL::stepBegin() {
 	}
 }
 
-void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs) {
+void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, std::mt19937 &generator) {
 	// Create buffer from input
 	{
 		cl::size_t<3> origin;
@@ -244,6 +244,10 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs) {
 	int prevLayerHeight = _inputHeight;
 	cl::Image2D* pPrevColumnStates = &_inputImage;
 
+	struct Uint2 {
+		unsigned int _x, _y;
+	};
+
 	struct Int2 {
 		int _x, _y;
 	};
@@ -252,7 +256,13 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs) {
 		float _x, _y;
 	};
 
+	std::uniform_int_distribution<int> uniformDist(0, 10000);
+
 	for (int l = 0; l < _layers.size(); l++) {
+		Uint2 seed;
+		seed._x = uniformDist(generator);
+		seed._y = uniformDist(generator);
+
 		Float2 inputSizeInv;
 		inputSizeInv._x = 1.0f / prevLayerWidth;
 		inputSizeInv._y = 1.0f / prevLayerHeight;
@@ -293,6 +303,7 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs) {
 		_layerColumnInhibitKernel.setArg(2, layerSizeInv);
 		_layerColumnInhibitKernel.setArg(3, layerInhibitionRadius);
 		_layerColumnInhibitKernel.setArg(4, layerInhibitionStep);
+		_layerColumnInhibitKernel.setArg(5, seed);
 
 		cs.getQueue().enqueueNDRangeKernel(_layerColumnInhibitKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 
@@ -381,7 +392,7 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 		cl::Image2D* pPing = &_qSummationBuffer;
 		cl::Image2D* pPong = &_halfQSummationBuffer;
 
-		while (width > 1 || height > 1) {
+		while (width > 1 && height > 1) {
 			_layerDownsampleKernel.setArg(0, *pPing);
 			_layerDownsampleKernel.setArg(1, *pPong);
 			_layerDownsampleKernel.setArg(2, downsampleSize);
@@ -395,7 +406,7 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 		}
 
 		// Retrieve result
-		float result;
+		std::vector<float> result(width * height);
 
 		{
 			cl::size_t<3> origin;
@@ -404,14 +415,15 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 			origin[2] = 0;
 
 			cl::size_t<3> region;
-			region[0] = 1;
-			region[1] = 1;
+			region[0] = width;
+			region[1] = height;
 			region[2] = 1;
 
-			cs.getQueue().enqueueReadImage(*pPing, CL_TRUE, origin, region, 0, 0, &result);
+			cs.getQueue().enqueueReadImage(*pPing, CL_TRUE, origin, region, 0, 0, &result[0]);
 		}
 
-		totalSum += result;
+		for (int i = 0; i < result.size(); i++)
+			totalSum += result[i];
 	}
 
 	cs.getQueue().finish();
@@ -519,7 +531,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	_output = _input;
 
 	// Get initial Q
-	activate(_output, cs);
+	activate(_output, cs, generator);
 
 	float maxQ = retrieveQ(cs);
 
@@ -536,7 +548,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 		else
 			testOutput[j] = _input[j];
 
-		activate(testOutput, cs);
+		activate(testOutput, cs, generator);
 
 		float result = retrieveQ(cs);
 
@@ -563,7 +575,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	else
 		_output[j] = _input[j];
 
-	activate(_output, cs);
+	activate(_output, cs, generator);
 
 	float exploratoryQ = retrieveQ(cs);
 

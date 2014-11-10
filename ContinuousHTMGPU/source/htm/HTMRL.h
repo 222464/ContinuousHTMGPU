@@ -89,7 +89,7 @@ namespace htm {
 
 		void stepBegin();
 
-		void activate(std::vector<float> &input, sys::ComputeSystem &cs);
+		void activate(std::vector<float> &input, sys::ComputeSystem &cs, std::mt19937 &generator);
 
 		float retrieveQ(sys::ComputeSystem &cs);
 
