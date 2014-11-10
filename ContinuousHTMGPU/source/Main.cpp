@@ -135,21 +135,21 @@ int main() {
 
 	layerDescs[0]._width = 64;
 	layerDescs[0]._height = 64;
-	layerDescs[0]._inhibitionRadius = 8;
+	layerDescs[0]._inhibitionRadius = 6;
 
 	layerDescs[1]._width = 64;
 	layerDescs[1]._height = 64;
-	layerDescs[1]._inhibitionRadius = 8;
+	layerDescs[1]._inhibitionRadius = 6;
 
 	layerDescs[2]._width = 64;
 	layerDescs[2]._height = 64;
-	layerDescs[2]._inhibitionRadius = 8;
+	layerDescs[2]._inhibitionRadius = 6;
 
 	std::vector<bool> actionMask(6, false);
 
 	actionMask[4] = actionMask[5] = true;
 
-	agent.createRandom(cs, program, 2, 3, layerDescs, actionMask, -0.1f, 0.1f, 0.1f, 0.5f, generator);
+	agent.createRandom(cs, program, 2, 3, layerDescs, actionMask, -0.1f, 0.1f, 0.01f, 0.05f, generator);
 
 	std::vector<float> prevInput(6, 0.0f);
 
@@ -214,7 +214,7 @@ int main() {
 		agent.setInput(4, prevInput[4]);
 		agent.setInput(5, prevInput[5]);
 
-		agent.step(cs, reward, 0.005f, 0.005f, 0.005f, 0.02f, 4, 0.07f, 0.8f, 0.00001f, 0.99f, 0.05f, 0.05f, generator);
+		agent.step(cs, reward, 0.005f, 0.005f, 0.005f, 0.02f, 4, 0.07f, 0.8f, 0.0001f, 0.99f, 0.05f, 0.05f, generator);
 
 		prevInput[4] = agent.getOutput(4);
 		prevInput[5] = agent.getOutput(5);

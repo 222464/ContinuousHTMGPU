@@ -6,14 +6,14 @@ constant sampler_t unnormalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_FAL
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 0.5f;
-constant float columnIntensity = 8.0f;
-constant float cellStateIntensity = 6.0f;
-constant float cellPredictionIntensity = 6.0f;
-constant float minActivation = 0.001f;
-constant float minLearningThreshold = 0.15f;
-constant float minDistance = 0.001f;
-constant float widthScalar = 0.01f;
+constant float activationIntensity = 8.0f;
+constant float columnIntensity = 64.0f;
+constant float cellStateIntensity = 8.0f;
+constant float cellPredictionIntensity = 8.0f;
+constant float minActivation = 0.0001f;
+constant float minLearningThreshold = 0.0f;
+constant float minDistance = 0.01f;
+constant float widthScalar = 0.4f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -123,7 +123,7 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only
 	
 	float thisActivation = read_imagef(columnActivations, normalizedClampedNearestSampler, layerCenterPositionNormalized).x;
 	
-	float inhibitedResult = exp((thisActivation - maximum) / (minActivation + maximum - average) * columnIntensity);
+	float inhibitedResult = exp((thisActivation - maximum) / fmax(minActivation, maximum - average) * columnIntensity);
 
 	write_imagef(columnStates, columnPosition, (float4)(inhibitedResult, inhibitedResult, inhibitedResult, inhibitedResult));
 }
@@ -166,10 +166,6 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 	
 	float columnState = read_imagef(columnStates, columnPosition).x;
 	
-	//float fmaxVectorMagnitude = 0.0f;
-	
-	//float cellVectorMagnitudes[4];
-	
 	float minPredictionError = 1.0f;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
@@ -177,32 +173,7 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 		
 		float predictionError = fabs(columnState - prediction);
 		
-		minPredictionError = min(minPredictionError, predictionError);
-		
-		/*int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
-		
-		float3 cellVector = (float3)(0.0f, 0.0f, 0.0f);
-		
-		// Go through all connections and update them
-		int wi = 0;
-		
-		for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
-		for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++)
-		for (int cio = 0; cio < cellsInColumn; cio++) {
-			int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
-		
-			float cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).x;
-		
-			float connectionState = read_imagef(cellStatesPrev, unnormalizedClampedNearestSampler, (int4)(columnPosition.x + dx, columnPosition.y + dy, cio, 0)).x;
-			
-			cellVector += cellWeightPrev * connectionState * ((float3)(dx, dy, cio - ci));
-			
-			wi++;
-		}
-		
-		cellVectorMagnitudes[ci] = length(cellVector);
-		
-		fmaxVectorMagnitude = fmax(fmaxVectorMagnitude, cellVectorMagnitudes[ci]);*/
+		minPredictionError = fmin(minPredictionError, predictionError);
 	}
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
@@ -309,7 +280,7 @@ void kernel layerColumnPrediction(read_only image3d_t cellPredictions, read_only
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float prediction = read_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 	
-		maxPrediction = max(maxPrediction, prediction);
+		maxPrediction = maxf(maxPrediction, prediction);
 	}
 	
 	float output = maxPrediction;
