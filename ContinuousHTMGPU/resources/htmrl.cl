@@ -6,12 +6,12 @@ constant sampler_t unnormalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_FAL
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 8.0f;
-constant float columnIntensity = 8.0f;
-constant float cellStateIntensity = 8.0f;
-constant float cellPredictionIntensity = 8.0f;
-constant float minActivation = 0.0001f;
-constant float minLearningThreshold = 0.0f;
+constant float activationIntensity = 0.1f;
+constant float columnIntensity = 16.0f;
+constant float cellStateIntensity = 4.0f;
+constant float cellPredictionIntensity = 1.0f;
+constant float minActivation = 0.00001f;
+constant float minLearningThreshold = 0.001f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -334,7 +334,7 @@ void kernel layerDownsample(read_only image2d_t qSummationBuffer, write_only ima
 	
 	for (int dx = 0; dx < downsampleSize.x; dx++)
 	for (int dy = 0; dy < downsampleSize.y; dy++) {
-		float partialSum = read_imagef(qSummationBuffer, (int2)(position.x * downsampleSize.x + dx, position.y * downsampleSize.y)).x;
+		float partialSum = read_imagef(qSummationBuffer, (int2)(position.x * downsampleSize.x + dx, position.y * downsampleSize.y + dy)).x;
 	
 		sum += partialSum;
 	}

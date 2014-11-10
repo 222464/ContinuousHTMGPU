@@ -167,7 +167,7 @@ void kernel layerDownsample(read_only image2d_array_t layerOutputs, write_only i
 	
 	for (int dx = 0; dx < downsampleSize.x; dx++)
 	for (int dy = 0; dy < downsampleSize.y; dy++) {
-		float layerOutput = read_imagef(layerOutputs, (int4)(position.x * downsampleSize.x + dx, position.y * downsampleSize.y, position.z, 0)).x;
+		float layerOutput = read_imagef(layerOutputs, (int4)(position.x * downsampleSize.x + dx, position.y * downsampleSize.y + dy, position.z, 0)).x;
 	
 		sample = max(sample, layerOutput);
 	}

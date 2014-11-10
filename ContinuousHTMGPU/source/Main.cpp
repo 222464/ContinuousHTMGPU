@@ -28,9 +28,9 @@ int main() {
 
 	window.create(sf::VideoMode(800, 600), "Pole Balancing");
 
-	window.setVerticalSyncEnabled(true);
+	//window.setVerticalSyncEnabled(true);
 
-	//window.setFramerateLimit(60);
+	window.setFramerateLimit(60);
 
 	// -------------------------- Load Resources --------------------------
 
@@ -116,14 +116,11 @@ int main() {
 
 	sf::Font font;
 
-	font.loadFromFile("Resources/pixelated.ttf");
+	font.loadFromFile("resources/pixelated.ttf");
 
 	sf::RenderTexture inputRT;
 
 	inputRT.create(64, 32);
-
-	float plotMin = 99999.0f;
-	float plotMax = -99999.0f;
 
 	float avgReward = 0.0f;
 	float avgRewardDecay = 0.003f;
@@ -134,10 +131,19 @@ int main() {
 
 	htm::HTMRL agent;
 
-	std::vector<htm::HTMRL::LayerDesc> layerDescs(1);
+	std::vector<htm::HTMRL::LayerDesc> layerDescs(3);
 
-	layerDescs[0]._width = 32;
-	layerDescs[0]._height = 32;
+	layerDescs[0]._width = 64;
+	layerDescs[0]._height = 64;
+	layerDescs[0]._inhibitionRadius = 8;
+
+	layerDescs[1]._width = 64;
+	layerDescs[1]._height = 64;
+	layerDescs[1]._inhibitionRadius = 8;
+
+	layerDescs[2]._width = 64;
+	layerDescs[2]._height = 64;
+	layerDescs[2]._inhibitionRadius = 8;
 
 	std::vector<bool> actionMask(6, false);
 
@@ -208,7 +214,7 @@ int main() {
 		agent.setInput(4, prevInput[4]);
 		agent.setInput(5, prevInput[5]);
 
-		agent.step(cs, reward, 0.01f, 0.01f, 0.05f, 4, 0.05f, 0.8f, 0.5f, 0.99f, 0.05f, 0.05f, generator);
+		agent.step(cs, reward, 0.02f, 0.02f, 0.02f, 4, 0.07f, 0.8f, 0.00001f, 0.99f, 0.05f, 0.05f, generator);
 
 		prevInput[4] = agent.getOutput(4);
 		prevInput[5] = agent.getOutput(5);
@@ -245,14 +251,6 @@ int main() {
 			if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right))
 				force = 4000.0f;
 		}
-
-		//if (trainMode) {
-		//	en.calculateGradient(std::vector<float>(1, force / 4000.0f));
-
-		//	en.moveAlongGradient(0.01f);
-		//}
-
-		//en.updateContext();
 
 		if (cartX < -cartMoveRadius) {
 			cartX = -cartMoveRadius;
@@ -333,6 +331,8 @@ int main() {
 		totalTime += dt;
 		plotUpdateTimer += dt;
 	} while (!quit);
+
+	agent.exportCellData(cs, "data", generator);
 
 	return 0;
 }

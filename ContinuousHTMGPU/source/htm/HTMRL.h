@@ -19,11 +19,12 @@ namespace htm {
 
 			int _receptiveFieldRadius;
 			int _lateralConnectionRadius;
+			int _inhibitionRadius;
 
 			int _cellsInColumn;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(8), _lateralConnectionRadius(6), _cellsInColumn(5)
+				: _width(16), _height(16), _receptiveFieldRadius(3), _lateralConnectionRadius(5), _inhibitionRadius(6), _cellsInColumn(4)
 			{}
 		};
 	private:
@@ -124,6 +125,6 @@ namespace htm {
 			return getOutput(x + y * _layerDescs.back()._width);
 		}
 
-		void exportCellData(sys::ComputeSystem &cs, const std::string &rootName);
+		void exportCellData(sys::ComputeSystem &cs, const std::string &rootName, std::mt19937 &generator);
 	};
 }

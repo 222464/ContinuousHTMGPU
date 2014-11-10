@@ -1,5 +1,7 @@
 #include <htm/HTMRL.h>
 
+#include <iostream>
+
 using namespace htm;
 
 void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, std::mt19937 &generator) {
@@ -257,11 +259,9 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs) {
 		inputReceptiveFieldRadius._x = _layerDescs[l]._receptiveFieldRadius;
 		inputReceptiveFieldRadius._y = _layerDescs[l]._receptiveFieldRadius;
 
-		int inputDiameter = 2 * _layerDescs[l]._receptiveFieldRadius + 1;
-
 		Float2 inputReceptiveFieldStep;
-		inputReceptiveFieldStep._x = inputSizeInv._x * _layerDescs[l]._receptiveFieldRadius / inputDiameter;
-		inputReceptiveFieldStep._y = inputSizeInv._y * _layerDescs[l]._receptiveFieldRadius / inputDiameter;
+		inputReceptiveFieldStep._x = inputSizeInv._x * _layerDescs[l]._receptiveFieldRadius;
+		inputReceptiveFieldStep._y = inputSizeInv._y * _layerDescs[l]._receptiveFieldRadius;
 
 		// Activation
 		_layerColumnActivateKernel.setArg(0, *pPrevColumnStates);
@@ -273,20 +273,20 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs) {
 
 		cs.getQueue().enqueueNDRangeKernel(_layerColumnActivateKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 
-		Int2 layerReceptiveFieldRadius;
-		layerReceptiveFieldRadius._x = _layerDescs[l]._receptiveFieldRadius;
-		layerReceptiveFieldRadius._y = _layerDescs[l]._receptiveFieldRadius;
+		Int2 layerInhibitionRadius;
+		layerInhibitionRadius._x = _layerDescs[l]._inhibitionRadius;
+		layerInhibitionRadius._y = _layerDescs[l]._inhibitionRadius;
 
-		Float2 layerReceptiveFieldStep;
-		layerReceptiveFieldStep._x = layerSizeInv._x * _layerDescs[l]._receptiveFieldRadius / inputDiameter;
-		layerReceptiveFieldStep._y = layerSizeInv._y * _layerDescs[l]._receptiveFieldRadius / inputDiameter;
+		Float2 layerInhibitionStep;
+		layerInhibitionStep._x = layerSizeInv._x * _layerDescs[l]._inhibitionRadius;
+		layerInhibitionStep._y = layerSizeInv._y * _layerDescs[l]._inhibitionRadius;
 
 		// Inhibition
 		_layerColumnInhibitKernel.setArg(0, _layers[l]._columnActivations);
 		_layerColumnInhibitKernel.setArg(1, _layers[l]._columnStates);
 		_layerColumnInhibitKernel.setArg(2, layerSizeInv);
-		_layerColumnInhibitKernel.setArg(3, layerReceptiveFieldRadius);
-		_layerColumnInhibitKernel.setArg(4, layerReceptiveFieldStep);
+		_layerColumnInhibitKernel.setArg(3, layerInhibitionRadius);
+		_layerColumnInhibitKernel.setArg(4, layerInhibitionStep);
 
 		cs.getQueue().enqueueNDRangeKernel(_layerColumnInhibitKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 
@@ -332,6 +332,8 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs) {
 		prevLayerHeight = _layerDescs[l]._height;
 		pPrevColumnStates = &_layers[l]._columnStates;
 	}
+
+	cs.getQueue().finish();
 }
 
 float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
@@ -370,7 +372,7 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 			_layerDownsampleKernel.setArg(1, *pPong);
 			_layerDownsampleKernel.setArg(2, downsampleSize);
 
-			cs.getQueue().enqueueNDRangeKernel(_layerDownsampleKernel, cl::NullRange, cl::NDRange(width, height));
+			cs.getQueue().enqueueNDRangeKernel(_layerDownsampleKernel, cl::NullRange, cl::NDRange(width / 2, height / 2));
 
 			std::swap(pPing, pPong);
 
@@ -397,6 +399,8 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 
 		totalSum += result;
 	}
+
+	cs.getQueue().finish();
 
 	return totalSum;
 }
@@ -430,19 +434,17 @@ void HTMRL::learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float cel
 		inputReceptiveFieldRadius._x = _layerDescs[l]._receptiveFieldRadius;
 		inputReceptiveFieldRadius._y = _layerDescs[l]._receptiveFieldRadius;
 
-		int inputDiameter = 2 * _layerDescs[l]._receptiveFieldRadius + 1;
-
 		Float2 inputReceptiveFieldStep;
-		inputReceptiveFieldStep._x = inputSizeInv._x * _layerDescs[l]._receptiveFieldRadius / inputDiameter;
-		inputReceptiveFieldStep._y = inputSizeInv._y * _layerDescs[l]._receptiveFieldRadius / inputDiameter;
+		inputReceptiveFieldStep._x = inputSizeInv._x * _layerDescs[l]._receptiveFieldRadius;
+		inputReceptiveFieldStep._y = inputSizeInv._y * _layerDescs[l]._receptiveFieldRadius;
 
 		Int2 layerReceptiveFieldRadius;
 		layerReceptiveFieldRadius._x = _layerDescs[l]._receptiveFieldRadius;
 		layerReceptiveFieldRadius._y = _layerDescs[l]._receptiveFieldRadius;
 
 		Float2 layerReceptiveFieldStep;
-		layerReceptiveFieldStep._x = layerSizeInv._x * _layerDescs[l]._receptiveFieldRadius / inputDiameter;
-		layerReceptiveFieldStep._y = layerSizeInv._y * _layerDescs[l]._receptiveFieldRadius / inputDiameter;
+		layerReceptiveFieldStep._x = layerSizeInv._x * _layerDescs[l]._receptiveFieldRadius;
+		layerReceptiveFieldStep._y = layerSizeInv._y * _layerDescs[l]._receptiveFieldRadius;
 
 		// Column weight update
 		_layerColumnWeightUpdateKernel.setArg(0, *pPrevColumnStates);
@@ -492,9 +494,13 @@ void HTMRL::learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float cel
 		prevLayerHeight = _layerDescs[l]._height;
 		pPrevColumnStates = &_layers[l]._columnStates;
 	}
+
+	cs.getQueue().finish();
 }
 
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float cellQWeightEligibilityDecay, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator) {
+	stepBegin();
+	
 	_output = _input;
 
 	// Get initial Q
@@ -511,7 +517,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	for (int i = 0; i < annealingIterations; i++) {
 		for (int j = 0; j < _output.size(); j++)
 		if (_actionMask[j])
-			testOutput[j] = std::min<int>(1.0f, std::max<int>(-1.0f, _output[j] + perturbationMultiplier * perturbationDist(generator)));
+			testOutput[j] = std::min<float>(1.0f, std::max<float>(-1.0f, _output[j] + perturbationMultiplier * perturbationDist(generator)));
 		else
 			testOutput[j] = _input[j];
 
@@ -537,7 +543,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 		if (uniformDist(generator) < outputBreakChance)
 			_output[j] = uniformDist(generator) * 2.0f - 1.0f;
 		else
-			_output[j] = std::min<int>(1.0f, std::max<int>(-1.0f, _output[j] + outputPerturbationDist(generator)));
+			_output[j] = std::min<float>(1.0f, std::max<float>(-1.0f, _output[j] + outputPerturbationDist(generator)));
 	}
 	else
 		_output[j] = _input[j];
@@ -548,42 +554,67 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	float tdError = alpha * (reward + gamma * exploratoryQ - _prevQ);
 
+	std::cout << exploratoryQ << std::endl;
+
 	_prevQ = exploratoryQ;
 
 	learn(cs, columnConnectionAlpha, cellConnectionAlpha, tdError, cellQWeightEligibilityDecay);
+
+	cs.getQueue().finish();
 }
 
-void HTMRL::exportCellData(sys::ComputeSystem &cs, const std::string &rootName) {
-	std::vector<float> state(_layerDescs.back()._width * _layerDescs.back()._height * _layerDescs.back()._cellsInColumn);
+void HTMRL::exportCellData(sys::ComputeSystem &cs, const std::string &rootName, std::mt19937 &generator) {
+	int maxWidth = 0;
+	int maxHeight = 0;
 
-	cl::size_t<3> origin;
-	origin[0] = 0;
-	origin[1] = 0;
-	origin[2] = 0;
+	for (int l = 0; l < _layers.size(); l++) {
+		maxWidth = std::max<int>(maxWidth, _layerDescs[l]._width);
+		maxHeight = std::max<int>(maxHeight, _layerDescs[l]._height);
+	}
+	
+	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
+	
+	int imageCounter = 0;
 
-	cl::size_t<3> region;
-	region[0] = _layerDescs.back()._width;
-	region[1] = _layerDescs.back()._height;
-	region[2] = _layerDescs.back()._cellsInColumn;
+	for (int l = 0; l < _layers.size(); l++) {
+		std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn);
 
-	cs.getQueue().enqueueReadImage(_layers.back()._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cl::size_t<3> origin;
+		origin[0] = 0;
+		origin[1] = 0;
+		origin[2] = 0;
 
-	// Convert to colors
-	for (int ci = 0; ci < _layerDescs.back()._cellsInColumn; ci++) {
-		sf::Image image;
-		image.create(_layerDescs.back()._width, _layerDescs.back()._height);
+		cl::size_t<3> region;
+		region[0] = _layerDescs[l]._width;
+		region[1] = _layerDescs[l]._height;
+		region[2] = _layerDescs[l]._cellsInColumn;
 
-		for (int x = 0; x < _layerDescs.back()._width; x++)
-		for (int y = 0; y < _layerDescs.back()._height; y++) {
-			sf::Color color;
+		cs.getQueue().enqueueReadImage(_layers[l]._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
 
-			color = sf::Color::White;
+		sf::Color c;
+		c.r = uniformDist(generator) * 255.0f;
+		c.g = uniformDist(generator) * 255.0f;
+		c.b = uniformDist(generator) * 255.0f;
 
-			color.a = color.g = color.b = state[x + y * _layerDescs.back()._width + ci * _layerDescs.back()._width * _layerDescs.back()._height] * 255.0f;
+		// Convert to colors
+		for (int ci = 0; ci < _layerDescs[l]._cellsInColumn; ci++) {
+			sf::Image image;
+			image.create(maxWidth, maxHeight, sf::Color::Transparent);
 
-			image.setPixel(x, y, color);
+			for (int x = 0; x < _layerDescs[l]._width; x++)
+			for (int y = 0; y < _layerDescs[l]._height; y++) {
+				sf::Color color;
+
+				color = c;
+
+				color.a = state[x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width * _layerDescs[l]._height] * 255.0f;
+
+				image.setPixel(x - _layerDescs[l]._width / 2 + maxWidth / 2, y - _layerDescs[l]._height / 2 + maxHeight / 2, color);
+			}
+
+			image.saveToFile(rootName + std::to_string(imageCounter) + ".png");
+
+			imageCounter++;
 		}
-
-		image.saveToFile(rootName + std::to_string(ci) + ".png");
 	}
 }
