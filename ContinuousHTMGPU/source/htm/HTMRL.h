@@ -51,6 +51,8 @@ namespace htm {
 
 			cl::Image3D _cellQWeightsPrev;
 			cl::Image3D _cellQWeights;
+
+			cl::Image2D _columnOutputs;
 		};
 
 		int _inputWidth, _inputHeight;
@@ -65,6 +67,7 @@ namespace htm {
 		cl::Kernel _layerCellPredictKernel;
 		cl::Kernel _layerColumnWeightUpdateKernel;
 		cl::Kernel _layerColumnPredictionKernel;
+		cl::Kernel _layerColumnOutputKernel;
 		cl::Kernel _layerRetrievePartialQSumsKernel;
 		cl::Kernel _layerDownsampleKernel;
 		cl::Kernel _layerUpdateQWeightsKernel;
@@ -90,12 +93,12 @@ namespace htm {
 
 		float retrieveQ(sys::ComputeSystem &cs);
 
-		void learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float tdError, float cellQWeightEligibilityDecay);
+		void learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float tdError, float cellQWeightEligibilityDecay);
 
 	public:
-		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, std::mt19937 &generator);
+		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float cellQWeightEligibilityDecay, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float cellQWeightEligibilityDecay, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
