@@ -6,9 +6,9 @@ constant sampler_t unnormalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_FAL
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 32.0f;
-constant float columnIntensity = 64.0f;
-constant float cellStateIntensity = 2.0f;
+constant float activationIntensity = 8.0f;
+constant float columnIntensity = 16.0f;
+constant float cellStateIntensity = 16.0f;
 constant float cellPredictionIntensity = 1.0f;
 constant float minActivation = 0.0001f;
 constant float minLearningThreshold = 0.05f;
@@ -204,12 +204,12 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 	float columnState = read_imagef(columnStates, columnPosition).x;
 	float columnPredictionPrev = read_imagef(columnPredictionsPrev, columnPosition).x;
 	
+	float predictionError = (columnState - columnPredictionPrev);
+		
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
 		float prediction = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		float predictionError = (columnState - columnPredictionPrev);
 		
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
 		

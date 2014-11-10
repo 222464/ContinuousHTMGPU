@@ -519,7 +519,7 @@ void HTMRL::learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float col
 		// Update prevs
 		prevLayerWidth = _layerDescs[l]._width;
 		prevLayerHeight = _layerDescs[l]._height;
-		pPrevColumnStates = &_layers[l]._columnStates;
+		pPrevColumnStates = &_layers[l]._columnOutputs;
 	}
 
 	cs.getQueue().finish();
