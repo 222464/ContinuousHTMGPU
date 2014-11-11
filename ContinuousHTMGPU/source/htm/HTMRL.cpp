@@ -86,8 +86,8 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 		_layers[l]._columnPredictions = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 		_layers[l]._columnPredictionsPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 
-		_layers[l]._cellQWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._cellsInColumn);
-		_layers[l]._cellQWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._cellsInColumn);
+		_layers[l]._cellQWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._cellsInColumn + 1);
+		_layers[l]._cellQWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._cellsInColumn + 1);
 
 		_layers[l]._columnOutputs = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 		_layers[l]._columnOutputsPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
@@ -201,7 +201,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 
 			region[0] = _layerDescs[l]._width;
 			region[1] = _layerDescs[l]._height;
-			region[2] = _layerDescs[l]._cellsInColumn;
+			region[2] = _layerDescs[l]._cellsInColumn + 1;
 
 			cs.getQueue().enqueueCopyImage(_layers[l]._cellQWeights, _layers[l]._cellQWeightsPrev, origin, origin, region);
 		}
@@ -470,9 +470,10 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 
 	for (int l = 0; l < _layers.size(); l++) {
 		_layerRetrievePartialQSumsKernel.setArg(0, _layers[l]._cellStates);
-		_layerRetrievePartialQSumsKernel.setArg(1, _layers[l]._cellQWeightsPrev);
-		_layerRetrievePartialQSumsKernel.setArg(2, _qSummationBuffer);
-		_layerRetrievePartialQSumsKernel.setArg(3, _layerDescs[l]._cellsInColumn);
+		_layerRetrievePartialQSumsKernel.setArg(1, _layers[l]._columnStates);
+		_layerRetrievePartialQSumsKernel.setArg(2, _layers[l]._cellQWeightsPrev);
+		_layerRetrievePartialQSumsKernel.setArg(3, _qSummationBuffer);
+		_layerRetrievePartialQSumsKernel.setArg(4, _layerDescs[l]._cellsInColumn);
 
 		cs.getQueue().enqueueNDRangeKernel(_layerRetrievePartialQSumsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 
@@ -691,11 +692,12 @@ void HTMRL::learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligi
 	for (int l = 0; l < _layers.size(); l++) {
 		// Cell Q weights update
 		_layerUpdateQWeightsKernel.setArg(0, _layers[l]._cellStates);
-		_layerUpdateQWeightsKernel.setArg(1, _layers[l]._cellQWeightsPrev);
-		_layerUpdateQWeightsKernel.setArg(2, _layers[l]._cellQWeights);
-		_layerUpdateQWeightsKernel.setArg(3, tdError);
-		_layerUpdateQWeightsKernel.setArg(4, cellQWeightEligibilityDecay);
-		_layerUpdateQWeightsKernel.setArg(5, _layerDescs[l]._cellsInColumn);
+		_layerUpdateQWeightsKernel.setArg(1, _layers[l]._columnStates);
+		_layerUpdateQWeightsKernel.setArg(2, _layers[l]._cellQWeightsPrev);
+		_layerUpdateQWeightsKernel.setArg(3, _layers[l]._cellQWeights);
+		_layerUpdateQWeightsKernel.setArg(4, tdError);
+		_layerUpdateQWeightsKernel.setArg(5, cellQWeightEligibilityDecay);
+		_layerUpdateQWeightsKernel.setArg(6, _layerDescs[l]._cellsInColumn);
 
 		cs.getQueue().enqueueNDRangeKernel(_layerUpdateQWeightsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 	}
@@ -817,7 +819,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	float tdError = alpha * (newQ - _prevValue);
 
-	std::cout << exploratoryQ << " " << _output[4] << std::endl;
+	std::cout << tdError << " " << exploratoryQ << " " << _output[4] << std::endl;
 
 	_prevQ = maxQ;
 	_prevValue = exploratoryQ;

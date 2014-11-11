@@ -6,14 +6,14 @@ constant sampler_t unnormalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_FAL
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 2.0f;
-constant float columnIntensity = 8.0f;
+constant float activationIntensity = 1.0f;
+constant float columnIntensity = 32.0f;
 constant float cellStateIntensity = 4.0f;
 constant float cellPredictionIntensity = 2.0f;
 constant float minActivation = 0.00001f;
 constant float minLearningThreshold = 0.02f;
-constant float minDistance = 0.005f;
-constant float widthScalar = 0.001f;
+constant float minDistance = 0.1f;
+constant float widthScalar = 0.005f;
 constant float predictionRangeExtension = 0.1f;
 
 float randFloat(uint2* state) {
@@ -130,8 +130,8 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only
 	
 	float difference = maximum - average;
 
-	if (fabs(difference) < minDistance)
-		inhibitedResult = randFloat(&seedValue) < 1.0f / (receptiveFieldRadius.x * receptiveFieldRadius.y) ? 1.0f : 0.0f;
+	if (difference == 0.0f)
+		inhibitedResult = randFloat(&seedValue) < 1.0f / ((2 * receptiveFieldRadius.x + 1) * (2 * receptiveFieldRadius.y + 1)) ? 1.0f : 0.0f;
 	else
 		inhibitedResult = exp((thisActivation - maximum) / fmax(minActivation, maximum - average) * columnIntensity);
 
@@ -423,7 +423,7 @@ void kernel layerColumnOutput(read_only image2d_t columnStates, read_only image2
 	write_imagef(columnOutputs, columnPosition, (float4)(output, output, output, output));
 }
 
-void kernel layerRetrievePartialQSums(read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image2d_t qSummationBuffer, int cellsInColumn) {
+void kernel layerRetrievePartialQSums(read_only image3d_t cellStates, read_only image2d_t columnStates, read_only image3d_t cellQWeightsPrev, write_only image2d_t qSummationBuffer, int cellsInColumn) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
 	float sum = 0.0f;
@@ -435,6 +435,12 @@ void kernel layerRetrievePartialQSums(read_only image3d_t cellStates, read_only 
 		
 		sum += cellQWeight * cellState;
 	}
+	
+	float columnState = read_imagef(columnStates, columnPosition).x;
+	
+	float columnQWeight = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, cellsInColumn, 0)).x;
+		
+	sum += columnState * columnQWeight;
 	
 	write_imagef(qSummationBuffer, columnPosition, (float4)(sum, sum, sum, sum));
 }
@@ -454,7 +460,7 @@ void kernel layerDownsample(read_only image2d_t qSummationBuffer, write_only ima
 	write_imagef(downsampledQSummationBuffer, position, (float4)(sum, sum, sum, sum));
 }
 
-void kernel layerUpdateQWeights(read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image3d_t cellQWeights, float tdError, float eligibilityDecay, int cellsInColumn) {
+void kernel layerUpdateQWeights(read_only image3d_t cellStates, read_only image2d_t columnStates, read_only image3d_t cellQWeightsPrev, write_only image3d_t cellQWeights, float tdError, float eligibilityDecay, int cellsInColumn) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
@@ -466,6 +472,14 @@ void kernel layerUpdateQWeights(read_only image3d_t cellStates, read_only image3
 	
 		write_imagef(cellQWeights, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellQWeight.x, newCellQWeight.y, 0.0f, 0.0f));
 	}
+	
+	float2 columnQWeightPrev = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, cellsInColumn, 0)).xy;
+	
+	float columnState = read_imagef(columnStates, columnPosition).x;
+
+	float2 newCellQWeight = columnQWeightPrev + (float2)(tdError * columnQWeightPrev.y, -eligibilityDecay * columnQWeightPrev.y + columnState);
+
+	write_imagef(cellQWeights, (int4)(columnPosition.x, columnPosition.y, cellsInColumn, 0), (float4)(newCellQWeight.x, newCellQWeight.y, 0.0f, 0.0f));
 }
 
 void kernel reconstructionInit(write_only image3d_t reconstructionWeights, int reconstructionNumWeights, uint2 seed, float minWeight, float maxWeight) {
