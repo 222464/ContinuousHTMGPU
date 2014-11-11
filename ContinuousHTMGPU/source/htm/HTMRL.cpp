@@ -19,6 +19,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	_qBias = weightDist(generator);
 	_qEligibility = 0.0f;
 	_prevQ = 0.0f;
+	_prevValue = 0.0f;
 
 	cl::Kernel initKernel = cl::Kernel(program.getProgram(), "initialize");
 
@@ -737,7 +738,7 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 	}
 }
 
-void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator) {
+void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator) {
 	stepBegin();
 	
 	_output = _input;
@@ -795,11 +796,14 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	float exploratoryQ = retrieveQ(cs);
 
-	float tdError = alpha * (reward + gamma * exploratoryQ - _prevQ);
+	float newQ = _prevQ + (reward + gamma * exploratoryQ - _prevQ) * tauInv;
+	//float tdError = alpha * (reward + gamma * exploratoryQ - _prevQ);
+
+	float tdError = alpha * (newQ - _prevValue);
 
 	std::cout << exploratoryQ << " " << _output[4] << std::endl;
 
-	_prevQ = exploratoryQ;
+	_prevQ = maxQ;
 
 	learn(cs, columnConnectionAlpha, columnWidthAlpha, cellConnectionAlpha, reconstructionAlpha, tdError, cellQWeightEligibilityDecay);
 

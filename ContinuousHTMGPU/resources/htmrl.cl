@@ -6,14 +6,14 @@ constant sampler_t unnormalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_FAL
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 32.0f;
-constant float columnIntensity = 64.0f;
-constant float cellStateIntensity = 8.0f;
+constant float activationIntensity = 2.0f;
+constant float columnIntensity = 4.0f;
+constant float cellStateIntensity = 4.0f;
 constant float cellPredictionIntensity = 2.0f;
 constant float minActivation = 0.00001f;
 constant float minLearningThreshold = 0.02f;
-constant float minDistance = 0.001f;
-constant float widthScalar = 0.0001f;
+constant float minDistance = 0.0001f;
+constant float widthScalar = 0.00001f;
 constant float predictionRangeExtension = 0.1f;
 
 float randFloat(uint2* state) {
