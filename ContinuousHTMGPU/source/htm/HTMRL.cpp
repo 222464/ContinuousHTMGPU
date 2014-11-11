@@ -544,7 +544,7 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 	return totalSum;
 }
 
-void HTMRL::learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float tdError, float cellQWeightEligibilityDecay) {
+void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha) {
 	int prevLayerWidth = _inputWidth;
 	int prevLayerHeight = _inputHeight;
 	cl::Image2D* pPrevColumnStates = &_inputImage;
@@ -556,9 +556,6 @@ void HTMRL::learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float col
 	struct Float2 {
 		float _x, _y;
 	};
-
-	_qBias += tdError * _qEligibility;
-	_qEligibility += -cellQWeightEligibilityDecay * _qEligibility + 1.0f;
 
 	for (int l = 0; l < _layers.size(); l++) {
 		Float2 inputSizeInv;
@@ -636,16 +633,6 @@ void HTMRL::learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float col
 			cs.getQueue().enqueueNDRangeKernel(_layerCellWeightUpdateKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 		}
 
-		// Cell Q weights update
-		_layerUpdateQWeightsKernel.setArg(0, _layers[l]._cellStates);
-		_layerUpdateQWeightsKernel.setArg(1, _layers[l]._cellQWeightsPrev);
-		_layerUpdateQWeightsKernel.setArg(2, _layers[l]._cellQWeights);
-		_layerUpdateQWeightsKernel.setArg(3, tdError);
-		_layerUpdateQWeightsKernel.setArg(4, cellQWeightEligibilityDecay);
-		_layerUpdateQWeightsKernel.setArg(5, _layerDescs[l]._cellsInColumn);
-
-		cs.getQueue().enqueueNDRangeKernel(_layerUpdateQWeightsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
-
 		// Update prevs
 		prevLayerWidth = _layerDescs[l]._width;
 		prevLayerHeight = _layerDescs[l]._height;
@@ -685,6 +672,33 @@ void HTMRL::learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float col
 	_updateReconstructionKernel.setArg(8, reconstructionAlpha);
 
 	cs.getQueue().enqueueNDRangeKernel(_updateReconstructionKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
+
+	cs.getQueue().finish();
+}
+
+void HTMRL::learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay) {
+	struct Int2 {
+		int _x, _y;
+	};
+
+	struct Float2 {
+		float _x, _y;
+	};
+
+	_qBias += tdError * _qEligibility;
+	_qEligibility += -cellQWeightEligibilityDecay * _qEligibility + 1.0f;
+
+	for (int l = 0; l < _layers.size(); l++) {
+		// Cell Q weights update
+		_layerUpdateQWeightsKernel.setArg(0, _layers[l]._cellStates);
+		_layerUpdateQWeightsKernel.setArg(1, _layers[l]._cellQWeightsPrev);
+		_layerUpdateQWeightsKernel.setArg(2, _layers[l]._cellQWeights);
+		_layerUpdateQWeightsKernel.setArg(3, tdError);
+		_layerUpdateQWeightsKernel.setArg(4, cellQWeightEligibilityDecay);
+		_layerUpdateQWeightsKernel.setArg(5, _layerDescs[l]._cellsInColumn);
+
+		cs.getQueue().enqueueNDRangeKernel(_layerUpdateQWeightsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
+	}
 
 	cs.getQueue().finish();
 }
@@ -743,9 +757,9 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	
 	_output = _input;
 
-	for (int i = 0; i < _output.size(); i++)
-	if (_actionMask[i])
-		_output[i] = std::min<float>(1.0f, std::max<float>(-1.0f, _prevPrediction[i]));
+	for (int j = 0; j < _output.size(); j++)
+	if (_actionMask[j])
+		_output[j] = std::min<float>(1.0f, std::max<float>(-1.0f, _prevPrediction[j]));
 
 	// Get initial Q
 	activate(_output, cs, generator);
@@ -796,6 +810,8 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	float exploratoryQ = retrieveQ(cs);
 
+	maxQ = std::max<float>(maxQ, exploratoryQ);
+
 	float newQ = _prevQ + (reward + gamma * exploratoryQ - _prevQ) * tauInv;
 	//float tdError = alpha * (reward + gamma * exploratoryQ - _prevQ);
 
@@ -804,8 +820,10 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	std::cout << exploratoryQ << " " << _output[4] << std::endl;
 
 	_prevQ = maxQ;
+	_prevValue = exploratoryQ;
 
-	learn(cs, columnConnectionAlpha, columnWidthAlpha, cellConnectionAlpha, reconstructionAlpha, tdError, cellQWeightEligibilityDecay);
+	learnSpatialTemporal(cs, columnConnectionAlpha, columnWidthAlpha, cellConnectionAlpha, reconstructionAlpha);
+	learnQ(cs, tdError, cellQWeightEligibilityDecay);
 
 	// Get prediction for next action
 	getReconstructedPrediction(_prevPrediction, cs);

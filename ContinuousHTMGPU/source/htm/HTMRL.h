@@ -110,7 +110,8 @@ namespace htm {
 
 		float retrieveQ(sys::ComputeSystem &cs);
 
-		void learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float tdError, float cellQWeightEligibilityDecay);
+		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha);
+		void learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay);
 
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
 

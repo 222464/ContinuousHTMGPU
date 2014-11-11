@@ -204,7 +204,7 @@ int main() {
 
 		//reward = dFitness * 5.0f;
 
-		reward = fitness * 0.2f;
+		reward = fitness * 0.02f;
 
 		if (totalTime == 0.0f)
 			avgReward = reward;
@@ -222,7 +222,7 @@ int main() {
 		agent.setInput(4, prevInput[4]);
 		agent.setInput(5, prevInput[5]);
 
-		agent.step(cs, reward, 0.02f, 0.02f, 0.02f, 0.01f, 0.02f, 6, 0.3f, 0.8f, 0.000005f, 0.99f, 8.0f, 0.05f, 0.05f, generator);
+		agent.step(cs, reward, 0.02f, 0.02f, 0.02f, 0.01f, 0.01f, 4, 0.2f, 0.8f, 0.00001f, 0.993f, 1.0f, 0.05f, 0.05f, generator);
 
 		prevInput[4] = agent.getOutput(4);
 		prevInput[5] = agent.getOutput(5);
