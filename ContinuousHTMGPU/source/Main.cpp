@@ -137,15 +137,15 @@ int main() {
 
 	layerDescs[0]._width = 16;
 	layerDescs[0]._height = 16;
-	layerDescs[0]._inhibitionRadius = 3;
+	layerDescs[0]._inhibitionRadius = 4;
 
 	/*layerDescs[1]._width = 16;
 	layerDescs[1]._height = 16;
-	layerDescs[1]._inhibitionRadius = 3;
+	layerDescs[1]._inhibitionRadius = 4;
 
 	layerDescs[2]._width = 16;
 	layerDescs[2]._height = 16;
-	layerDescs[2]._inhibitionRadius = 3;*/
+	layerDescs[2]._inhibitionRadius = 4;*/
 
 	std::vector<bool> actionMask(6, false);
 
@@ -204,7 +204,7 @@ int main() {
 
 		//reward = dFitness * 5.0f;
 
-		reward = fitness * 0.02f;
+		reward = fitness;
 
 		if (totalTime == 0.0f)
 			avgReward = reward;
@@ -222,7 +222,7 @@ int main() {
 		agent.setInput(4, prevInput[4]);
 		agent.setInput(5, prevInput[5]);
 
-		agent.step(cs, reward, 0.02f, 0.02f, 0.02f, 0.01f, 0.015f, 6, 0.2f, 0.8f, 0.0005f, 0.993f, 1.0f, 0.05f, 0.05f, generator);
+		agent.step(cs, reward, 0.005f, 0.005f, 0.005f, 0.005f, 0.015f, 0.001f, 8, 0.5f, 0.8f, 0.005f, 0.993f, 1.0f, 0.05f, 0.05f, generator);
 
 		prevInput[4] = agent.getOutput(4);
 		prevInput[5] = agent.getOutput(5);

@@ -1,21 +1,22 @@
 constant sampler_t normalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_TRUE |
-	CLK_ADDRESS_CLAMP_TO_EDGE |
+	CLK_ADDRESS_CLAMP |
 	CLK_FILTER_NEAREST;
 	
 constant sampler_t unnormalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_FALSE |
-	CLK_ADDRESS_CLAMP_TO_EDGE |
+	CLK_ADDRESS_CLAMP |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 16.0f;
-constant float columnIntensity = 16.0f;
+constant float activationIntensity = 4.0f;
+constant float columnIntensity = 32.0f;
 constant float cellStateIntensity = 4.0f;
 constant float cellPredictionIntensity = 2.0f;
 constant float minActivation = 0.00001f;
 constant float minLearningThreshold = 0.1f;
-constant float minDistance = 0.1f;
-constant float widthScalar = 0.005f;
+constant float minDistance = 0.0001f;
+constant float widthScalar = 0.0025f;
 constant float predictionRangeExtension = 0.1f;
-constant float cellQStrength = 0.25f;
+constant float cellQStrength = 0.025f;
+constant float columnQStrength = 0.05f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -441,7 +442,7 @@ void kernel layerRetrievePartialQSums(read_only image3d_t cellStates, read_only 
 	
 	float columnQWeight = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, cellsInColumn, 0)).x;
 		
-	sum += columnState * columnQWeight;
+	sum += columnState * columnQWeight * columnQStrength;
 	
 	write_imagef(qSummationBuffer, columnPosition, (float4)(sum, sum, sum, sum));
 }
@@ -478,7 +479,7 @@ void kernel layerUpdateQWeights(read_only image3d_t cellStates, read_only image2
 	
 	float columnState = read_imagef(columnStates, columnPosition).x;
 
-	float2 newCellQWeight = columnQWeightPrev + (float2)(tdError * columnQWeightPrev.y, -eligibilityDecay * columnQWeightPrev.y + columnState);
+	float2 newCellQWeight = columnQWeightPrev + (float2)(tdError * columnQWeightPrev.y, -eligibilityDecay * columnQWeightPrev.y + columnState * columnQStrength);
 
 	write_imagef(cellQWeights, (int4)(columnPosition.x, columnPosition.y, cellsInColumn, 0), (float4)(newCellQWeight.x, newCellQWeight.y, 0.0f, 0.0f));
 }

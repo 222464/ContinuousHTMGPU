@@ -17,7 +17,6 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	std::uniform_real_distribution<float> weightDist(minInitWeight, maxInitWeight);
 
 	_qBias = weightDist(generator);
-	_qEligibility = 0.0f;
 	_prevQ = 0.0f;
 	_prevValue = 0.0f;
 
@@ -443,13 +442,13 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, std::mt1
 
 		cs.getQueue().enqueueNDRangeKernel(_layerColumnOutputKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 
+		cs.getQueue().flush();
+
 		// Update prevs
 		prevLayerWidth = _layerDescs[l]._width;
 		prevLayerHeight = _layerDescs[l]._height;
 		pPrevColumnStates = &_layers[l]._columnOutputs;
 	}
-
-	cs.getQueue().finish();
 }
 
 float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
@@ -634,6 +633,8 @@ void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionA
 			cs.getQueue().enqueueNDRangeKernel(_layerCellWeightUpdateKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 		}
 
+		cs.getQueue().flush();
+
 		// Update prevs
 		prevLayerWidth = _layerDescs[l]._width;
 		prevLayerHeight = _layerDescs[l]._height;
@@ -673,11 +674,9 @@ void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionA
 	_updateReconstructionKernel.setArg(8, reconstructionAlpha);
 
 	cs.getQueue().enqueueNDRangeKernel(_updateReconstructionKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
-
-	cs.getQueue().finish();
 }
 
-void HTMRL::learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay) {
+void HTMRL::learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay, float qBiasAlpha) {
 	struct Int2 {
 		int _x, _y;
 	};
@@ -686,8 +685,7 @@ void HTMRL::learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligi
 		float _x, _y;
 	};
 
-	_qBias += tdError * _qEligibility;
-	_qEligibility += -cellQWeightEligibilityDecay * _qEligibility + 1.0f;
+	_qBias += qBiasAlpha * tdError;
 
 	for (int l = 0; l < _layers.size(); l++) {
 		// Cell Q weights update
@@ -700,9 +698,9 @@ void HTMRL::learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligi
 		_layerUpdateQWeightsKernel.setArg(6, _layerDescs[l]._cellsInColumn);
 
 		cs.getQueue().enqueueNDRangeKernel(_layerUpdateQWeightsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
-	}
 
-	cs.getQueue().finish();
+		cs.getQueue().flush();
+	}
 }
 
 void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs) {
@@ -754,7 +752,7 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 	}
 }
 
-void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator) {
+void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator) {
 	stepBegin();
 	
 	_output = _input;
@@ -825,7 +823,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	_prevValue = exploratoryQ;
 
 	learnSpatialTemporal(cs, columnConnectionAlpha, columnWidthAlpha, cellConnectionAlpha, reconstructionAlpha);
-	learnQ(cs, tdError, cellQWeightEligibilityDecay);
+	learnQ(cs, tdError, cellQWeightEligibilityDecay, qBiasAlpha);
 
 	// Get prediction for next action
 	getReconstructedPrediction(_prevPrediction, cs);
