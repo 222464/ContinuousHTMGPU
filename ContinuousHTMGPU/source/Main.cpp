@@ -4,6 +4,8 @@
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
 
+#include <vis/HTMRLVisualizer.h>
+
 #include <time.h>
 
 int main() {
@@ -153,6 +155,12 @@ int main() {
 
 	std::vector<float> prevInput(6, 0.0f);
 
+	sf::RenderTexture htmRT;
+	htmRT.create(1024, 1024, false);
+
+	vis::HTMRLVisualizer visualizer;
+	visualizer.create(1024);
+
 	do {
 		clock.restart();
 
@@ -214,7 +222,7 @@ int main() {
 		agent.setInput(4, prevInput[4]);
 		agent.setInput(5, prevInput[5]);
 
-		agent.step(cs, reward, 0.005f, 0.005f, 0.005f, 0.02f, 1, 0.07f, 0.85f, 0.001f, 0.99f, 0.05f, 0.05f, generator);
+		agent.step(cs, reward, 0.005f, 0.005f, 0.005f, 0.02f, 1, 0.07f, 0.85f, 0.0001f, 0.99f, 0.05f, 0.05f, generator);
 
 		prevInput[4] = agent.getOutput(4);
 		prevInput[5] = agent.getOutput(5);
@@ -322,6 +330,24 @@ int main() {
 
 		window.draw(inputSprite);
 
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::V)) {
+			htmRT.setActive();
+			htmRT.clear(sf::Color::White);
+
+			visualizer.update(htmRT, sf::Vector2f(512.0f, 512.0f), sf::Vector2f(1.95f, 1.95f), cs, agent, generator);
+
+			htmRT.display();
+
+			sf::Sprite htmSprite;
+			htmSprite.setTexture(htmRT.getTexture());
+
+			htmSprite.setScale(0.8f, 0.8f);
+			htmSprite.setOrigin(512, 512);
+			htmSprite.setPosition(400.0f, 300.0f);
+
+			window.draw(htmSprite);
+		}
+
 		// -------------------------------------------------------------------
 
 		window.display();
@@ -331,8 +357,6 @@ int main() {
 		totalTime += dt;
 		plotUpdateTimer += dt;
 	} while (!quit);
-
-	agent.exportCellData(cs, "data", generator);
 
 	return 0;
 }

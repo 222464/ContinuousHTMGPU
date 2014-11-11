@@ -52,6 +52,7 @@ namespace htm {
 			cl::Image3D _cellQWeightsPrev;
 			cl::Image3D _cellQWeights;
 
+			cl::Image2D _columnOutputsPrev;
 			cl::Image2D _columnOutputs;
 		};
 
@@ -64,7 +65,9 @@ namespace htm {
 		cl::Kernel _layerColumnInhibitKernel;
 		cl::Kernel _layerCellActivateKernel;
 		cl::Kernel _layerCellWeightUpdateKernel;
+		cl::Kernel _layerCellWeightUpdateLastKernel;
 		cl::Kernel _layerCellPredictKernel;
+		cl::Kernel _layerCellPredictLastKernel;
 		cl::Kernel _layerColumnWeightUpdateKernel;
 		cl::Kernel _layerColumnPredictionKernel;
 		cl::Kernel _layerColumnOutputKernel;
@@ -128,6 +131,6 @@ namespace htm {
 			return getOutput(x + y * _layerDescs.back()._width);
 		}
 
-		void exportCellData(sys::ComputeSystem &cs, const std::string &rootName, std::mt19937 &generator);
+		void exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<sf::Image>> &images, unsigned long seed) const;
 	};
 }

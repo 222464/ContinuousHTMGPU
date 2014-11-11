@@ -6,14 +6,14 @@ constant sampler_t unnormalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_FAL
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 8.0f;
-constant float columnIntensity = 16.0f;
-constant float cellStateIntensity = 16.0f;
-constant float cellPredictionIntensity = 1.0f;
+constant float activationIntensity = 32.0f;
+constant float columnIntensity = 64.0f;
+constant float cellStateIntensity = 8.0f;
+constant float cellPredictionIntensity = 2.0f;
 constant float minActivation = 0.0001f;
-constant float minLearningThreshold = 0.05f;
-constant float minDistance = 0.1f;
-constant float widthScalar = 1.0f;
+constant float minLearningThreshold = 0.02f;
+constant float minDistance = 0.01f;
+constant float widthScalar = 0.01f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -196,7 +196,71 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 	}
 }
 
-void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only image3d_t cellStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
+void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only image3d_t cellStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellPredictionsPrev, read_only image2d_t nextLayerContextPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
+	write_only image3d_t cellWeights, int cellsInColumn, int layerWidth, int2 lateralConnectionsRadii, float2 layerSizeInv, float alpha)
+{
+	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
+	
+	float columnState = read_imagef(columnStates, columnPosition).x;
+	float columnPredictionPrev = read_imagef(columnPredictionsPrev, columnPosition).x;
+	
+	float predictionError = (columnState - columnPredictionPrev);
+		
+	for (int ci = 0; ci < cellsInColumn; ci++) {
+		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		
+		float prediction = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		
+		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
+		
+		// Go through all connections and update them
+		int wi = 0;
+		
+		for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
+		for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
+			int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
+		
+			for (int cio = 0; cio < cellsInColumn; cio++) {
+				int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
+			
+				float cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).x;
+		
+				float connectionState = read_imagef(cellStatesPrev, unnormalizedClampedNearestSampler, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
+				
+				float newCellWeight = cellWeightPrev + alpha * predictionError * connectionState;
+				
+				write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newCellWeight, newCellWeight, newCellWeight));
+				
+				wi++;
+			}
+			
+			int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
+			
+			// Additional context from next layer
+			float2 normalizedConnectionCoords = (float2)(connectionCoords.x * layerSizeInv.x, connectionCoords.y * layerSizeInv.y);
+	
+			float nextContext = read_imagef(nextLayerContextPrev, normalizedClampedNearestSampler, normalizedConnectionCoords).x;
+			
+			float cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).x;
+
+			float newCellWeight = cellWeightPrev + alpha * predictionError * nextContext;
+			
+			write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newCellWeight, newCellWeight, newCellWeight));
+				
+			wi++;
+		}
+		
+		int4 biasPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
+		
+		float cellBiasPrev = read_imagef(cellWeightsPrev, biasPosition).x;
+
+		float newCellBias = cellBiasPrev + alpha * predictionError;
+		
+		write_imagef(cellWeights, biasPosition, (float4)(newCellBias, newCellBias, newCellBias, newCellBias));
+	}
+}
+
+void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_only image3d_t cellStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
 	write_only image3d_t cellWeights, int cellsInColumn, int layerWidth, int2 lateralConnectionsRadii, float alpha)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
@@ -242,7 +306,61 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 	}
 }
 
-void kernel layerCellPredict(read_only image2d_t columnStates, read_only image3d_t cellStates, read_only image3d_t cellWeights,
+void kernel layerCellPredict(read_only image2d_t columnStates, read_only image3d_t cellStates, read_only image3d_t cellWeights, read_only image2d_t nextLayerContextPrev,
+	write_only image3d_t cellPredictions, int cellsInColumn, int layerWidth, int2 lateralConnectionsRadii, float2 layerSizeInv)
+{
+	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
+	
+	for (int ci = 0; ci < cellsInColumn; ci++) {
+		float sum = 0.0f;
+		
+		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
+		
+		// Go through all connections 
+		int wi = 0;
+		
+		for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
+		for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
+			int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
+		
+			for (int cio = 0; cio < cellsInColumn; cio++) {
+				int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
+			
+				float cellWeight = read_imagef(cellWeights, weightPosition).x;
+		
+				float connectionState = read_imagef(cellStates, unnormalizedClampedNearestSampler, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
+				
+				sum += cellWeight * connectionState;
+				
+				wi++;
+			}
+			
+			int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
+			
+			float cellWeight = read_imagef(cellWeights, weightPosition).x;
+			
+			float2 normalizedConnectionCoords = (float2)(connectionCoords.x * layerSizeInv.x, connectionCoords.y * layerSizeInv.y);
+	
+			float nextContext = read_imagef(nextLayerContextPrev, normalizedClampedNearestSampler, normalizedConnectionCoords).x;
+			
+			sum += cellWeight * nextContext;
+			
+			wi++;
+		}
+		
+		int4 biasPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
+		
+		float bias = read_imagef(cellWeights, biasPosition).x;
+		
+		sum += bias;
+		
+		float prediction = sigmoid(sum * cellPredictionIntensity);
+		
+		write_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0), prediction);
+	}
+}
+
+void kernel layerCellPredictLast(read_only image2d_t columnStates, read_only image3d_t cellStates, read_only image3d_t cellWeights,
 	write_only image3d_t cellPredictions, int cellsInColumn, int layerWidth, int2 lateralConnectionsRadii)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
