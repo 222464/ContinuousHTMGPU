@@ -11,6 +11,8 @@
 
 #include <memory>
 
+#define HTMRL_GPU_Q_SUMMATION 0
+
 namespace htm {
 	class HTMRL {
 	public:

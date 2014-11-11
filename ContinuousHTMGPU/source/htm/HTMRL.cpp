@@ -402,7 +402,7 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, std::mt1
 		if (l == _layers.size() - 1) {
 			_layerCellPredictLastKernel.setArg(0, _layers[l]._columnStates);
 			_layerCellPredictLastKernel.setArg(1, _layers[l]._cellStates);
-			_layerCellPredictLastKernel.setArg(2, _layers[l]._cellWeights);
+			_layerCellPredictLastKernel.setArg(2, _layers[l]._cellWeightsPrev);
 			_layerCellPredictLastKernel.setArg(3, _layers[l]._cellPredictions);
 			_layerCellPredictLastKernel.setArg(4, _layerDescs[l]._cellsInColumn);
 			_layerCellPredictLastKernel.setArg(5, layerWidth);
@@ -413,7 +413,7 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, std::mt1
 		else {
 			_layerCellPredictKernel.setArg(0, _layers[l]._columnStates);
 			_layerCellPredictKernel.setArg(1, _layers[l]._cellStates);
-			_layerCellPredictKernel.setArg(2, _layers[l]._cellWeights);
+			_layerCellPredictKernel.setArg(2, _layers[l]._cellWeightsPrev);
 			_layerCellPredictKernel.setArg(3, _layers[l + 1]._columnOutputsPrev);
 			_layerCellPredictKernel.setArg(4, _layers[l]._cellPredictions);
 			_layerCellPredictKernel.setArg(5, _layerDescs[l]._cellsInColumn);
@@ -472,6 +472,7 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 
 		cs.getQueue().enqueueNDRangeKernel(_layerRetrievePartialQSumsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 
+#if HTMRL_GPU_Q_SUMMATION
 		// Downsample
 		int width = _layerDescs[l]._width;
 		int height = _layerDescs[l]._height;
@@ -511,6 +512,27 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 
 		for (int i = 0; i < result.size(); i++)
 			totalSum += result[i];
+#else
+		// Retrieve result
+		std::vector<float> result(_layerDescs[l]._width * _layerDescs[l]._height);
+
+		{
+			cl::size_t<3> origin;
+			origin[0] = 0;
+			origin[1] = 0;
+			origin[2] = 0;
+
+			cl::size_t<3> region;
+			region[0] = _layerDescs[l]._width;
+			region[1] = _layerDescs[l]._height;
+			region[2] = 1;
+
+			cs.getQueue().enqueueReadImage(_qSummationBuffer, CL_TRUE, origin, region, 0, 0, &result[0]);
+		}
+
+		for (int i = 0; i < result.size(); i++)
+			totalSum += result[i];
+#endif
 	}
 
 	cs.getQueue().finish();
@@ -721,7 +743,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	for (int i = 0; i < _output.size(); i++)
 	if (_actionMask[i])
-		_output[i] = _prevPrediction[i];
+		_output[i] = std::min<float>(1.0f, std::max<float>(-1.0f, _prevPrediction[i]));
 
 	// Get initial Q
 	activate(_output, cs, generator);
@@ -774,7 +796,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	float tdError = alpha * (reward + gamma * exploratoryQ - _prevQ);
 
-	std::cout << exploratoryQ << std::endl;
+	std::cout << _output[4] << std::endl;
 
 	_prevQ = exploratoryQ;
 

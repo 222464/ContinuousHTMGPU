@@ -10,10 +10,11 @@ constant float activationIntensity = 32.0f;
 constant float columnIntensity = 64.0f;
 constant float cellStateIntensity = 8.0f;
 constant float cellPredictionIntensity = 2.0f;
-constant float minActivation = 0.0001f;
+constant float minActivation = 0.00001f;
 constant float minLearningThreshold = 0.02f;
-constant float minDistance = 0.01f;
-constant float widthScalar = 0.01f;
+constant float minDistance = 0.001f;
+constant float widthScalar = 0.0001f;
+constant float predictionRangeExtension = 0.1f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -354,7 +355,7 @@ void kernel layerCellPredict(read_only image2d_t columnStates, read_only image3d
 		
 		sum += bias;
 		
-		float prediction = sigmoid(sum * cellPredictionIntensity);
+		float prediction = fmin(1.0f, fmax(0.0f, sigmoid(sum * cellPredictionIntensity) * (1.0f + 2.0f * predictionRangeExtension) - predictionRangeExtension));
 		
 		write_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0), prediction);
 	}
@@ -393,7 +394,7 @@ void kernel layerCellPredictLast(read_only image2d_t columnStates, read_only ima
 		
 		sum += bias;
 		
-		float prediction = sigmoid(sum * cellPredictionIntensity);
+		float prediction = fmin(1.0f, fmax(0.0f, sigmoid(sum * cellPredictionIntensity) * (1.0f + 2.0f * predictionRangeExtension) - predictionRangeExtension));
 		
 		write_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0), prediction);
 	}
@@ -454,7 +455,7 @@ void kernel layerDownsample(read_only image2d_t qSummationBuffer, write_only ima
 		sum += partialSum;
 	}
 	
-	write_imagef(downsampledQSummationBuffer, (int2)(position.x, position.y), (float4)(sum, sum, sum, sum));
+	write_imagef(downsampledQSummationBuffer, position, (float4)(sum, sum, sum, sum));
 }
 
 void kernel layerUpdateQWeights(read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image3d_t cellQWeights, float tdError, float eligibilityDecay, int cellsInColumn) {
