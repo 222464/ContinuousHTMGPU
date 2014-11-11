@@ -86,6 +86,7 @@ namespace htm {
 
 		std::vector<float> _output;
 		std::vector<float> _prevPrediction;
+		std::vector<float> _prevInput;
 
 		float _qBias;
 		float _qEligibility;

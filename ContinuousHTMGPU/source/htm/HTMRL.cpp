@@ -37,6 +37,9 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	_prevPrediction.clear();
 	_prevPrediction.assign(_inputWidth * _inputHeight, 0.0f);
 
+	_prevInput.clear();
+	_prevInput.assign(_inputWidth * _inputHeight, 0.0f);
+
 	_inputImage = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _inputWidth, _inputHeight);
 
 	std::uniform_int_distribution<int> uniformDist(0, 10000);
@@ -796,14 +799,18 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	float tdError = alpha * (reward + gamma * exploratoryQ - _prevQ);
 
-	std::cout << _output[4] << std::endl;
+	std::cout << exploratoryQ << " " << _output[4] << std::endl;
 
 	_prevQ = exploratoryQ;
+
+	activate(_prevInput, cs, generator);
 
 	learn(cs, columnConnectionAlpha, columnWidthAlpha, cellConnectionAlpha, reconstructionAlpha, tdError, cellQWeightEligibilityDecay);
 
 	// Get prediction for next action
 	getReconstructedPrediction(_prevPrediction, cs);
+
+	_prevInput = _output;
 
 	cs.getQueue().finish();
 }

@@ -222,7 +222,7 @@ int main() {
 		agent.setInput(4, prevInput[4]);
 		agent.setInput(5, prevInput[5]);
 
-		agent.step(cs, reward, 0.02f, 0.02f, 0.02f, 0.01f, 0.02f, 16, 0.05f, 0.8f, 0.0025f, 0.99f, 0.05f, 0.05f, generator);
+		agent.step(cs, reward, 0.02f, 0.02f, 0.02f, 0.01f, 0.02f, 16, 0.5f, 0.8f, 0.0002f, 0.99f, 0.05f, 0.05f, generator);
 
 		prevInput[4] = agent.getOutput(4);
 		prevInput[5] = agent.getOutput(5);
