@@ -6,15 +6,16 @@ constant sampler_t unnormalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_FAL
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 1.0f;
-constant float columnIntensity = 32.0f;
+constant float activationIntensity = 16.0f;
+constant float columnIntensity = 16.0f;
 constant float cellStateIntensity = 4.0f;
 constant float cellPredictionIntensity = 2.0f;
 constant float minActivation = 0.00001f;
-constant float minLearningThreshold = 0.02f;
+constant float minLearningThreshold = 0.1f;
 constant float minDistance = 0.1f;
 constant float widthScalar = 0.005f;
 constant float predictionRangeExtension = 0.1f;
+constant float cellQStrength = 0.25f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -159,7 +160,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesPrev, read_o
 		
 		float difference = prevState - prevWeight.x;
 		
-		float2 change = (float2)(connectionAlpha * learnScalar * difference, widthAlpha * learnScalar * (widthScalar / fmax(minDistance, difference) - prevWeight.y));
+		float2 change = (float2)(connectionAlpha * learnScalar * difference, widthAlpha * learnScalar * (widthScalar / fmax(minDistance, fabs(difference)) - prevWeight.y));
 		
 		float2 newWeight = prevWeight + change;
 		
@@ -433,7 +434,7 @@ void kernel layerRetrievePartialQSums(read_only image3d_t cellStates, read_only 
 	
 		float cellQWeight = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		sum += cellQWeight * cellState;
+		sum += cellQWeight * cellState * cellQStrength;
 	}
 	
 	float columnState = read_imagef(columnStates, columnPosition).x;
@@ -468,7 +469,7 @@ void kernel layerUpdateQWeights(read_only image3d_t cellStates, read_only image2
 	
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 	
-		float2 newCellQWeight = cellQWeightPrev + (float2)(tdError * cellQWeightPrev.y, -eligibilityDecay * cellQWeightPrev.y + cellState);
+		float2 newCellQWeight = cellQWeightPrev + (float2)(tdError * cellQWeightPrev.y, -eligibilityDecay * cellQWeightPrev.y + cellState * cellQStrength);
 	
 		write_imagef(cellQWeights, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellQWeight.x, newCellQWeight.y, 0.0f, 0.0f));
 	}
