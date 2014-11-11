@@ -470,3 +470,78 @@ void kernel layerUpdateQWeights(read_only image3d_t cellStates, read_only image3
 		write_imagef(cellQWeights, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellQWeight.x, newCellQWeight.y, 0.0f, 0.0f));
 	}
 }
+
+void kernel reconstructionInit(write_only image3d_t reconstructionWeights, int reconstructionNumWeights, uint2 seed, float minWeight, float maxWeight) {
+	uint2 seedValue = seed + (uint2)(get_global_id(0), get_global_id(1)) * 50;
+
+	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
+
+	for (int wi = 0; wi < reconstructionNumWeights; wi++) {
+		float weight = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
+		
+		write_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0), (float4)(weight, weight, weight, weight));
+	}
+}
+
+void kernel reconstructInput(read_only image3d_t reconstructionWeights, read_only image2d_t sdr, write_only image2d_t inputs, int2 receptiveFieldRadius, float2 inputSizeInv, float2 sdrSizeInv) {
+	int2 inputPosition = (int2)(get_global_id(0), get_global_id(1));
+	float2 inputPositionNormalized = (float2)(inputPosition.x * inputSizeInv.x, inputPosition.y * inputSizeInv.y);
+	
+	float sum = 0.0f;
+	
+	int wi = 0;
+	
+	for (int dx = -receptiveFieldRadius.x; dx <= receptiveFieldRadius.x; dx++)
+	for (int dy = -receptiveFieldRadius.y; dy <= receptiveFieldRadius.y; dy++) {
+		float2 sdrPositionNormalized = inputPositionNormalized + (float2)(dx * sdrSizeInv.x, dy + sdrSizeInv.y);
+		
+		float source = read_imagef(sdr, normalizedClampedNearestSampler, sdrPositionNormalized).x;
+
+		float weight = read_imagef(reconstructionWeights, (int4)(inputPosition.x, inputPosition.y, wi, 0)).x;
+		
+		sum += source * weight;
+		
+		wi++;
+	}
+	
+	// Bias
+	float bias = read_imagef(reconstructionWeights, (int4)(inputPosition.x, inputPosition.y, wi, 0)).x;
+		
+	sum += bias;
+	
+	write_imagef(inputs, inputPosition, (float4)(sum, sum, sum, sum));
+}
+
+void kernel updateReconstruction(read_only image2d_t targets, read_only image2d_t inputs, read_only image3d_t reconstructionWeightsPrev, read_only image2d_t sdr, write_only image3d_t reconstructionWeights, int2 receptiveFieldRadius, float2 inputSizeInv, float2 sdrSizeInv, float alpha) {
+	int2 inputPosition = (int2)(get_global_id(0), get_global_id(1));
+	float2 inputPositionNormalized = (float2)(inputPosition.x * inputSizeInv.x, inputPosition.y * inputSizeInv.y);
+	
+	float target = read_imagef(targets, inputPosition).x;
+	float input = read_imagef(inputs, inputPosition).x;
+	
+	float error = alpha * (target - input);
+	
+	int wi = 0;
+	
+	for (int dx = -receptiveFieldRadius.x; dx <= receptiveFieldRadius.x; dx++)
+	for (int dy = -receptiveFieldRadius.y; dy <= receptiveFieldRadius.y; dy++) {
+		float2 sdrPositionNormalized = inputPositionNormalized + (float2)(dx * sdrSizeInv.x, dy + sdrSizeInv.y);
+		
+		float source = read_imagef(sdr, normalizedClampedNearestSampler, sdrPositionNormalized).x;
+
+		float prevWeight = read_imagef(reconstructionWeightsPrev, (int4)(inputPosition.x, inputPosition.y, wi, 0)).x;
+		
+		float newWeight = prevWeight + error * source;
+		
+		write_imagef(reconstructionWeights, (int4)(inputPosition.x, inputPosition.y, wi, 0), (float4)(newWeight, newWeight, newWeight, newWeight));
+		
+		wi++;
+	}
+	
+	// Bias
+	float prevBias = read_imagef(reconstructionWeightsPrev, (int4)(inputPosition.x, inputPosition.y, wi, 0)).x;
+		
+	float newBias = prevBias + error;
+	
+	write_imagef(reconstructionWeights, (int4)(inputPosition.x, inputPosition.y, wi, 0), (float4)(newBias, newBias, newBias, newBias));
+}

@@ -75,11 +75,15 @@ namespace htm {
 		cl::Kernel _layerDownsampleKernel;
 		cl::Kernel _layerUpdateQWeightsKernel;
 
+		cl::Kernel _reconstructInputKernel;
+		cl::Kernel _updateReconstructionKernel;
+
 		std::vector<float> _input;
 
 		std::vector<bool> _actionMask;
 
 		std::vector<float> _output;
+		std::vector<float> _prevPrediction;
 
 		float _qBias;
 		float _qEligibility;
@@ -90,18 +94,26 @@ namespace htm {
 		cl::Image2D _qSummationBuffer;
 		cl::Image2D _halfQSummationBuffer;
 
+		cl::Image3D _reconstructionWeightsPrev;
+		cl::Image3D _reconstructionWeights;
+		cl::Image2D _reconstruction;
+
+		int _reconstructionReceptiveRadius;
+
 		void stepBegin();
 
 		void activate(std::vector<float> &input, sys::ComputeSystem &cs, std::mt19937 &generator);
 
 		float retrieveQ(sys::ComputeSystem &cs);
 
-		void learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float tdError, float cellQWeightEligibilityDecay);
+		void learn(sys::ComputeSystem &cs, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float tdError, float cellQWeightEligibilityDecay);
+
+		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
 
 	public:
 		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float cellQWeightEligibilityDecay, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
