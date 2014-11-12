@@ -17,7 +17,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	std::uniform_real_distribution<float> weightDist(minInitWeight, maxInitWeight);
 
 	_qBias = weightDist(generator);
-	_prevQ = 0.0f;
+	_prevMaxQ = 0.0f;
 	_prevValue = 0.0f;
 
 	cl::Kernel initKernel = cl::Kernel(program.getProgram(), "initialize");
@@ -299,7 +299,9 @@ void HTMRL::stepBegin() {
 	std::swap(_reconstructionWeights, _reconstructionWeightsPrev);
 }
 
-void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, std::mt19937 &generator) {
+void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, unsigned long seed) {
+	std::mt19937 generator(seed);
+
 	// Create buffer from input
 	{
 		cl::size_t<3> origin;
@@ -539,8 +541,6 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 #endif
 	}
 
-	cs.getQueue().finish();
-
 	return totalSum;
 }
 
@@ -752,7 +752,7 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 	}
 }
 
-void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator) {
+void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator) {
 	stepBegin();
 	
 	_output = _input;
@@ -761,8 +761,12 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	if (_actionMask[j])
 		_output[j] = std::min<float>(1.0f, std::max<float>(-1.0f, _prevPrediction[j]));
 
+	std::uniform_int_distribution<int> seedDist(0, 10000);
+
+	int seed = seedDist(generator);
+
 	// Get initial Q
-	activate(_output, cs, generator);
+	activate(_output, cs, seed);
 
 	float maxQ = retrieveQ(cs);
 
@@ -771,20 +775,30 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	float perturbationMultiplier = 1.0f;
 
 	std::normal_distribution<float> perturbationDist(0.0f, annealingStdDev);
+	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
+
+	std::vector<float> prevDOutput(_output.size(), 0.0f);
 
 	for (int i = 0; i < annealingIterations; i++) {
 		for (int j = 0; j < _output.size(); j++)
-		if (_actionMask[j])
-			testOutput[j] = std::min<float>(1.0f, std::max<float>(-1.0f, _output[j] + perturbationMultiplier * perturbationDist(generator)));
+		if (_actionMask[j]) {
+			if (uniformDist(generator) < annealingBreakChance)
+				testOutput[j] = uniformDist(generator) * 2.0f - 1.0f;
+			else
+				testOutput[j] = std::min<float>(1.0f, std::max<float>(-1.0f, _output[j] + prevDOutput[j] * annealingMomentum + perturbationMultiplier * perturbationDist(generator)));
+		}
 		else
 			testOutput[j] = _input[j];
 
-		activate(testOutput, cs, generator);
+		activate(testOutput, cs, seed);
 
 		float result = retrieveQ(cs);
 
-		if (result > maxQ) {
+		if (result >= maxQ) {
 			maxQ = result;
+
+			for (int j = 0; j < _output.size(); j++)
+				prevDOutput[j] = testOutput[j] - _output[j];
 
 			_output = testOutput;
 		}
@@ -793,7 +807,6 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	}
 
 	// Exploratory action
-	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
 	std::normal_distribution<float> outputPerturbationDist(0.0f, outputPerturbationStdDev);
 
 	for (int j = 0; j < _output.size(); j++)
@@ -806,23 +819,27 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	else
 		_output[j] = _input[j];
 
-	activate(_output, cs, generator);
+	activate(_output, cs, seed);
 
 	float exploratoryQ = retrieveQ(cs);
 
 	maxQ = std::max<float>(maxQ, exploratoryQ);
 
-	float newQ = _prevQ + (reward + gamma * exploratoryQ - _prevQ) * tauInv;
-	//float tdError = alpha * (reward + gamma * exploratoryQ - _prevQ);
+	float newQ = reward + gamma * maxQ;
 
-	float tdError = alpha * (newQ - _prevValue);
+	float suboptimality = (_prevMaxQ - newQ) * tauInv;
+
+	float adv = newQ - suboptimality;
+
+	float tdError = alpha * (adv - _prevValue);
 
 	std::cout << tdError << " " << exploratoryQ << " " << _output[4] << std::endl;
 
-	_prevQ = maxQ;
+	_prevMaxQ = maxQ;
 	_prevValue = exploratoryQ;
 
 	learnSpatialTemporal(cs, columnConnectionAlpha, columnWidthAlpha, cellConnectionAlpha, reconstructionAlpha);
+
 	learnQ(cs, tdError, cellQWeightEligibilityDecay, qBiasAlpha);
 
 	// Get prediction for next action

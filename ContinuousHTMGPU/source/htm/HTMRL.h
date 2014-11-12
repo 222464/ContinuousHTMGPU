@@ -26,7 +26,7 @@ namespace htm {
 			int _cellsInColumn;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(3), _lateralConnectionRadius(5), _inhibitionRadius(6), _cellsInColumn(4)
+				: _width(16), _height(16), _receptiveFieldRadius(2), _lateralConnectionRadius(4), _inhibitionRadius(6), _cellsInColumn(3)
 			{}
 		};
 	private:
@@ -89,7 +89,7 @@ namespace htm {
 		std::vector<float> _prevInput;
 
 		float _qBias;
-		float _prevQ;
+		float _prevMaxQ;
 		float _prevValue;
 
 		cl::Image2D _inputImage;
@@ -105,7 +105,7 @@ namespace htm {
 
 		void stepBegin();
 
-		void activate(std::vector<float> &input, sys::ComputeSystem &cs, std::mt19937 &generator);
+		void activate(std::vector<float> &input, sys::ComputeSystem &cs, unsigned long seed);
 
 		float retrieveQ(sys::ComputeSystem &cs);
 
@@ -117,7 +117,7 @@ namespace htm {
 	public:
 		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingDecay, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
