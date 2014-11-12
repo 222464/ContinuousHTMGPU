@@ -6,18 +6,20 @@ constant sampler_t unnormalizedClampedNearestSampler = CLK_NORMALIZED_COORDS_FAL
 	CLK_ADDRESS_CLAMP |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 64.0f;
-constant float columnIntensity = 64.0f;
+constant float activationIntensity = 4.0f;
+constant float columnIntensity = 8.0f;
 constant float cellStateIntensity = 4.0f;
 constant float cellPredictionIntensity = 2.0f;
 constant float minActivation = 0.00001f;
-constant float minLearningThreshold = 0.01f;
-constant float minDistance = 0.01f;
-constant float widthScalar = 8.0f;
+constant float minLearningThreshold = 0.3f;
+constant float minDistance = 0.1f;
+constant float widthScalar = 0.05f;
+constant float minColumnDistance = 0.1f;
+constant float columnWidthScalar = 0.05f;
 constant float predictionRangeExtension = 0.1f;
-constant float cellQStrength = 0.025f;
+constant float cellQStrength = 0.0125f;
 constant float columnQStrength = 0.05f;
-constant float sparsity = 0.99f;
+constant int localActivity = 2;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -34,8 +36,7 @@ float sigmoid(float x) {
 	return 1.0f / (1.0f + exp(-x));
 }
 
-void kernel initialize(write_only image2d_t columnActivations, write_only image2d_t columnStates, write_only image3d_t columnWeights,
-	write_only image3d_t cellStates, write_only image3d_t cellWeights, write_only image3d_t cellPredictions, write_only image3d_t cellQWeights, write_only image2d_t columnOutputs,
+void kernel initializePartOne(write_only image2d_t columnActivations, write_only image2d_t columnWidths, write_only image2d_t columnStates, write_only image3d_t columnWeights, write_only image2d_t columnOutputs,
 	int cellsInColumn, int layerWidth, int receptiveFieldSize, int lateralConnectionsSize, uint2 seed, float minWeight, float maxWeight, float minWidth, float maxWidth)
 {
 	uint2 seedValue = seed + (uint2)(get_global_id(0), get_global_id(1)) * 100;
@@ -45,15 +46,27 @@ void kernel initialize(write_only image2d_t columnActivations, write_only image2
 	write_imagef(columnActivations, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 	write_imagef(columnStates, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 	write_imagef(columnOutputs, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
+	
+	float columnWidth = randFloat(&seedValue) * (maxWidth - minWidth) + minWidth;
 
+	write_imagef(columnWidths, columnPosition, (float4)(columnWidth, columnWidth, columnWidth, columnWidth));
+	
 	for (int wi = 0; wi < receptiveFieldSize; wi++) {
 		int4 weightPosition = (int4)(columnPosition.x, columnPosition.y, wi, 0);
 	
-		float columnWeight = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
-		float columnWidth = randFloat(&seedValue) * (maxWidth - minWidth) + minWidth;
+		float columnConnectionWeight = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
+		float columnConnectionWidth = randFloat(&seedValue) * (maxWidth - minWidth) + minWidth;
 
-		write_imagef(columnWeights, weightPosition, (float4)(columnWeight, columnWidth, 0.0f, 0.0f));
+		write_imagef(columnWeights, weightPosition, (float4)(columnConnectionWeight, columnConnectionWidth, 0.0f, 0.0f));
 	}
+}
+
+void kernel initializePartTwo(write_only image3d_t cellStates, write_only image3d_t cellWeights, write_only image3d_t cellPredictions, write_only image3d_t cellQWeights,
+	int cellsInColumn, int layerWidth, int receptiveFieldSize, int lateralConnectionsSize, uint2 seed, float minWeight, float maxWeight, float minWidth, float maxWidth)
+{
+	uint2 seedValue = seed + (uint2)(get_global_id(0), get_global_id(1)) * 130;
+
+	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(0.0f, 0.0f, 0.0f, 0.0f));
@@ -75,7 +88,7 @@ void kernel initialize(write_only image2d_t columnActivations, write_only image2
 	}
 }
 
-void kernel layerColumnActivate(read_only image2d_t columnStatesPrev, write_only image2d_t columnActivations, read_only image3d_t columnWeights, float2 layerSizeInv, int2 inputReceptiveFieldRadius, float2 inputReceptiveFieldStep) {
+void kernel layerColumnActivate(read_only image2d_t columnStatesInput, write_only image2d_t columnActivations, read_only image2d_t columnWidthsPrev, read_only image3d_t columnWeights, float2 layerSizeInv, int2 inputReceptiveFieldRadius, float2 inputReceptiveFieldStep) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 inputCenterPositionNormalized = (float2)((columnPosition.x + 0.5f) * layerSizeInv.x, (columnPosition.y + 0.5f) * layerSizeInv.y);
 
@@ -89,9 +102,9 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesPrev, write_only
 
 		if (inputPositionNormalized.x > 0.0f && inputPositionNormalized.x < 1.0f && inputPositionNormalized.y > 0.0f && inputPositionNormalized.y < 1.0f) {
 			float2 weight = read_imagef(columnWeights, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).xy;
-			float prevState = read_imagef(columnStatesPrev, normalizedClampedNearestSampler, inputPositionNormalized).x;
+			float prevState = read_imagef(columnStatesInput, normalizedClampedNearestSampler, inputPositionNormalized).x;
 			
-			float difference = (weight.x - prevState) * weight.y;
+			float difference = weight.x - prevState;
 			
 			sum += difference * difference;
 			
@@ -99,6 +112,8 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesPrev, write_only
 		}
 	}
 	
+	//float columnWidthPrev = read_imagef(columnWidthsPrev, columnPosition).x;
+
 	float activation = exp(-sum * activationIntensity);
 	
 	write_imagef(columnActivations, columnPosition, (float4)(activation, activation, activation, activation));
@@ -110,10 +125,11 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 layerCenterPositionNormalized = (float2)((columnPosition.x + 0.5f) * layerSizeInv.x, (columnPosition.y + 0.5f) * layerSizeInv.y);
 
-	float maximum = 0.0f;
-	float average = 0.0f;
-
-	int count = 0;
+	float thisActivation = read_imagef(columnActivations, normalizedClampedNearestSampler, layerCenterPositionNormalized).x;
+	
+	int numHigher = 0;
+	float count = 0.0f;
+	float total = 0.0f;
 	
 	for (int dx = -receptiveFieldRadius.x; dx <= receptiveFieldRadius.x; dx++)
 	for (int dy = -receptiveFieldRadius.y; dy <= receptiveFieldRadius.y; dy++) {
@@ -122,55 +138,49 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only
 		if (layerPositionNormalized.x > 0.0f && layerPositionNormalized.x < 1.0f && layerPositionNormalized.y > 0.0f && layerPositionNormalized.y < 1.0f) {
 			float activation = read_imagef(columnActivations, normalizedClampedNearestSampler, layerPositionNormalized).x;
 			
-			maximum = fmax(maximum, activation);
-			average += activation;
-			
+			if (activation > thisActivation)
+				numHigher++;
+				
 			count++;
 		}
+			
+		total++;
 	}
 	
-	average /= count;
+	numHigher = numHigher * (total / count);
 	
-	float thisActivation = read_imagef(columnActivations, normalizedClampedNearestSampler, layerCenterPositionNormalized).x;
-	
-	float difference = maximum - average;
-	
-	float inhibitedResult;
-	
-	if (difference == 0.0f)
-		inhibitedResult = randFloat(&seedValue) < 1.0f / ((2 * receptiveFieldRadius.x + 1) * (2 * receptiveFieldRadius.y + 1)) ? 1.0f : 0.0f;
-	else {
-		float dist = fmax(0.0f, (sparsity * maximum + (1.0f - sparsity) * average) - thisActivation);
-
-		inhibitedResult = exp(-dist / difference * columnIntensity);
-	}
+	float inhibitedResult = sigmoid((localActivity - numHigher) * columnIntensity);
 	
 	write_imagef(columnStates, columnPosition, (float4)(inhibitedResult, inhibitedResult, inhibitedResult, inhibitedResult));
 }
 
-void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesPrev, read_only image2d_t columnStates, read_only image3d_t columnWeightsPrev, write_only image3d_t columnWeights, float2 layerSizeInv, int2 receptiveFieldRadius, float2 inputReceptiveFieldStep, float connectionAlpha, float widthAlpha) {
+void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_only image2d_t columnStates, read_only image2d_t columnWidthsPrev, read_only image3d_t columnWeightsPrev, write_only image2d_t columnWidths, write_only image3d_t columnWeights, float2 layerSizeInv, int2 receptiveFieldRadius, float2 inputReceptiveFieldStep, float connectionAlpha, float widthAlpha, float columnWidthAlpha) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 inputCenterPositionNormalized = (float2)((columnPosition.x + 0.5f) * layerSizeInv.x, (columnPosition.y + 0.5f) * layerSizeInv.y);
 
 	float state = read_imagef(columnStates, columnPosition).x;
 		
-	float learnScalar = fmax(0.0f, state - minLearningThreshold);
+	float learnScalar = fmax(0.0f, (state - minLearningThreshold) / (1.0f - minLearningThreshold));
 		
 	// Adjust weights by their source activations and error
 	int weightIndex = 0;
+	
+	float sum = 0.0f;
 	
 	for (int dx = -receptiveFieldRadius.x; dx <= receptiveFieldRadius.x; dx++)
 	for (int dy = -receptiveFieldRadius.y; dy <= receptiveFieldRadius.y; dy++) {
 		float2 inputPositionNormalized = inputCenterPositionNormalized + (float2)(dx * inputReceptiveFieldStep.x, dy * inputReceptiveFieldStep.y);
 		
 		if (inputPositionNormalized.x > 0.0f && inputPositionNormalized.x < 1.0f && inputPositionNormalized.y > 0.0f && inputPositionNormalized.y < 1.0f) {	
-			float prevState = read_imagef(columnStatesPrev, normalizedClampedNearestSampler, inputPositionNormalized).x;
+			float prevState = read_imagef(columnStatesInput, normalizedClampedNearestSampler, inputPositionNormalized).x;
 			
 			float2 prevWeight = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).xy;
 			
 			float difference = prevState - prevWeight.x;
 			
-			float2 change = (float2)(connectionAlpha * learnScalar * difference, widthAlpha * learnScalar * (widthScalar / fmax(minDistance, fabs(difference)) - prevWeight.y));
+			sum += difference * difference;
+			
+			float2 change = (float2)(connectionAlpha * learnScalar * difference, widthAlpha * learnScalar * (widthScalar / (minDistance + fabs(difference)) - prevWeight.y));
 			
 			float2 newWeight = prevWeight + change;
 			
@@ -179,6 +189,13 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesPrev, read_o
 			weightIndex++;
 		}
 	}
+	
+	// Adjust column width
+	float columnWidthPrev = read_imagef(columnWidthsPrev, columnPosition).x;
+	
+	float newColumnWidth = columnWidthPrev + columnWidthAlpha * learnScalar * (columnWidthScalar / (minColumnDistance + sum) - columnWidthPrev);
+	
+	write_imagef(columnWidths, columnPosition, (float4)(newColumnWidth, newColumnWidth, newColumnWidth, newColumnWidth));
 }
 
 void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,

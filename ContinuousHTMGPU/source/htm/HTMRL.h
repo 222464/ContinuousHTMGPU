@@ -25,8 +25,10 @@ namespace htm {
 
 			int _cellsInColumn;
 
+			float _qInfluenceMultiplier;
+
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(2), _lateralConnectionRadius(4), _inhibitionRadius(6), _cellsInColumn(3)
+				: _width(16), _height(16), _receptiveFieldRadius(2), _lateralConnectionRadius(3), _inhibitionRadius(4), _cellsInColumn(3), _qInfluenceMultiplier(1.0f)
 			{}
 		};
 	private:
@@ -35,6 +37,9 @@ namespace htm {
 			cl::Image3D _columnWeights;
 
 			cl::Image2D _columnActivations;
+
+			cl::Image2D _columnWidthsPrev;
+			cl::Image2D _columnWidths;
 
 			cl::Image2D _columnStatesPrev;
 			cl::Image2D _columnStates;
@@ -109,7 +114,7 @@ namespace htm {
 
 		float retrieveQ(sys::ComputeSystem &cs);
 
-		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha);
+		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float widthAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha);
 		void learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay, float qBiasAlpha);
 
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
@@ -117,7 +122,7 @@ namespace htm {
 	public:
 		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float widthAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
@@ -144,7 +149,7 @@ namespace htm {
 		}
 
 		float getOutput(int x, int y) const {
-			return getOutput(x + y * _layerDescs.back()._width);
+			return getOutput(x + y * _inputWidth);
 		}
 
 		void exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<sf::Image>> &images, unsigned long seed) const;

@@ -7,6 +7,7 @@
 #include <vis/HTMRLVisualizer.h>
 
 #include <time.h>
+#include <iostream>
 
 int main() {
 	std::mt19937 generator(time(nullptr));
@@ -133,27 +134,31 @@ int main() {
 
 	htm::HTMRL agent;
 
-	std::vector<htm::HTMRL::LayerDesc> layerDescs(1);
+	std::vector<htm::HTMRL::LayerDesc> layerDescs(3);
 
-	layerDescs[0]._width = 32;
-	layerDescs[0]._height = 32;
-	layerDescs[0]._inhibitionRadius = 8;
+	layerDescs[0]._width = 64;
+	layerDescs[0]._height = 34;
+	layerDescs[0]._inhibitionRadius = 3;
+	layerDescs[0]._qInfluenceMultiplier = 0.25f;
 
-	/*layerDescs[1]._width = 32;
-	layerDescs[1]._height = 32;
-	layerDescs[1]._inhibitionRadius = 6;
+	layerDescs[1]._width = 48;
+	layerDescs[1]._height = 25;
+	layerDescs[1]._inhibitionRadius = 3;
+	layerDescs[1]._qInfluenceMultiplier = 0.5f;
 
 	layerDescs[2]._width = 32;
-	layerDescs[2]._height = 32;
-	layerDescs[2]._inhibitionRadius = 6;*/
+	layerDescs[2]._height = 16;
+	layerDescs[2]._inhibitionRadius = 3;
+	layerDescs[2]._qInfluenceMultiplier = 1.0f;
 
-	std::vector<bool> actionMask(6, false);
+	std::vector<bool> actionMask(64 * 34, false);
 
-	actionMask[4] = actionMask[5] = true;
+	for (int x = 0; x < 64; x++)
+	for (int y = 32; y < 34; y++) {
+		actionMask[x + y * 64] = true;
+	}
 
-	agent.createRandom(cs, program, 2, 3, layerDescs, actionMask, -0.25f, 0.25f, 0.1f, 0.5f, generator);
-
-	std::vector<float> prevInput(6, 0.0f);
+	agent.createRandom(cs, program, 64, 34, layerDescs, actionMask, -0.25f, 0.25f, 0.01f, 0.1f, generator);
 
 	sf::RenderTexture htmRT;
 	htmRT.create(1024, 1024, false);
@@ -213,21 +218,25 @@ int main() {
 
 		sf::Image img = inputRT.getTexture().copyToImage();
 
-		std::vector<float> state(6);
+		for (int x = 0; x < 64; x++)
+		for (int y = 0; y < 32; y++) {
+			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
+		}
 
-		agent.setInput(0, cartX * 0.25f);
-		agent.setInput(1, cartVelX * 0.4f);
-		agent.setInput(2, std::fmod(poleAngle + static_cast<float>(3.14159f), 2.0f * static_cast<float>(3.14159f)) / (2.0f * static_cast<float>(3.14159f)) * 2.0f - 1.0f);
-		agent.setInput(3, poleAngleVel * 0.2f);
-		agent.setInput(4, prevInput[4]);
-		agent.setInput(5, prevInput[5]);
+		agent.step(cs, reward, 0.06f, 0.06f, 0.06f, 0.06f, 0.04f, 0.015f, 0.005f, 4, 0.5f, 0.05f, 0.8f, 0.4f, 0.05f, 0.99f, 0.0f, 0.01f, 0.01f, generator);
 
-		agent.step(cs, reward, 0.005f, 0.001f, 0.005f, 0.005f, 0.015f, 0.001f, 8, 0.4f, 0.02f, 0.75f, 0.7f, 0.0002f, 0.993f, 80.0f, 0.05f, 0.05f, generator);
+		float output = 0.0f;
 
-		prevInput[4] = agent.getOutput(4);
-		prevInput[5] = agent.getOutput(5);
+		for (int x = 0; x < 64; x++)
+		for (int y = 32; y < 34; y++) {
+			output += agent.getOutput(x, y);
+		}
 
-		float dir = prevInput[4];
+		output /= 2 * 64;
+
+		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, output * 12.0f));
+
+		//std::cout << dir << std::endl;
 
 		float agentForce = 4000.0f * dir;
 	
