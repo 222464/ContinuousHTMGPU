@@ -11,7 +11,7 @@
 
 #include <memory>
 
-#define HTMRL_GPU_Q_SUMMATION 0
+#define HTMRL_GPU_Q_SUMMATION 1
 
 namespace htm {
 	class HTMRL {

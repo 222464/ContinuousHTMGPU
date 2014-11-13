@@ -244,7 +244,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	_qSummationBuffer = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), maxWidth, maxHeight);
 	_halfQSummationBuffer = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), std::ceil(maxWidth * 0.5f), std::ceil(maxHeight * 0.5f));
 
-	_reconstructionReceptiveRadius = std::ceil(static_cast<float>(_layerDescs.front()._width) / static_cast<float>(_inputWidth) / static_cast<float>(_layerDescs.front()._receptiveFieldRadius));
+	_reconstructionReceptiveRadius = std::ceil(static_cast<float>(_layerDescs.front()._width) / static_cast<float>(_inputWidth) * static_cast<float>(_layerDescs.front()._receptiveFieldRadius));
 	int reconstructionNumWeights = std::pow(_reconstructionReceptiveRadius * 2 + 1, 2) + 1; // + 1 for bias
 
 	_reconstructionWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _inputWidth, _inputHeight, reconstructionNumWeights);
@@ -833,8 +833,6 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 		perturbationMultiplier *= annealingDecay;
 	}
 
-	std::vector<float> maxOutput = _output;
-
 	// Exploratory action
 	std::normal_distribution<float> outputPerturbationDist(0.0f, outputPerturbationStdDev);
 
@@ -854,7 +852,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	maxQ = std::max<float>(maxQ, exploratoryQ);
 
-	float newQ = reward + gamma * exploratoryQ;
+	float newQ = reward + gamma * maxQ;
 
 	float suboptimality = (_prevMaxQ - newQ) * tauInv;
 
