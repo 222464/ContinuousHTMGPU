@@ -68,14 +68,14 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 
 		_layers[l]._columnActivations = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 		
-		_layers[l]._columnWidths = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
-		_layers[l]._columnWidthsPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
+		_layers[l]._columnDutyCycles = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
+		_layers[l]._columnDutyCyclesPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 
 		_layers[l]._columnStates = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 		_layers[l]._columnStatesPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 
-		_layers[l]._columnWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, receptiveFieldSize);
-		_layers[l]._columnWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, receptiveFieldSize);
+		_layers[l]._columnWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, receptiveFieldSize);
+		_layers[l]._columnWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, receptiveFieldSize);
 
 		_layers[l]._cellStates = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._cellsInColumn);
 		_layers[l]._cellStatesPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._cellsInColumn);
@@ -97,7 +97,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 		seed1._y = uniformDist(generator);
 
 		initPartOneKernel.setArg(0, _layers[l]._columnActivations);
-		initPartOneKernel.setArg(1, _layers[l]._columnWidths);
+		initPartOneKernel.setArg(1, _layers[l]._columnDutyCycles);
 		initPartOneKernel.setArg(2, _layers[l]._columnStates);
 		initPartOneKernel.setArg(3, _layers[l]._columnWeights);
 		initPartOneKernel.setArg(4, _layerDescs[l]._cellsInColumn);
@@ -159,7 +159,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 			region[1] = _layerDescs[l]._height;
 			region[2] = 1;
 
-			cs.getQueue().enqueueCopyImage(_layers[l]._columnWidths, _layers[l]._columnWidthsPrev, origin, origin, region);
+			cs.getQueue().enqueueCopyImage(_layers[l]._columnDutyCycles, _layers[l]._columnDutyCyclesPrev, origin, origin, region);
 		}
 
 		{
@@ -283,6 +283,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 
 	_layerColumnActivateKernel = cl::Kernel(program.getProgram(), "layerColumnActivate");
 	_layerColumnInhibitKernel = cl::Kernel(program.getProgram(), "layerColumnInhibit");
+	_layerColumnDutyCycleUpdateKernel = cl::Kernel(program.getProgram(), "layerColumnDutyCycleUpdate");
 	_layerCellActivateKernel = cl::Kernel(program.getProgram(), "layerCellActivate");
 	_layerCellWeightUpdateKernel = cl::Kernel(program.getProgram(), "layerCellWeightUpdate");
 	_layerCellWeightUpdateLastKernel = cl::Kernel(program.getProgram(), "layerCellWeightUpdateLast");
@@ -303,7 +304,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 void HTMRL::stepBegin() {
 	for (int l = 0; l < _layers.size(); l++) {
 		std::swap(_layers[l]._columnStates, _layers[l]._columnStatesPrev);
-		std::swap(_layers[l]._columnWidths, _layers[l]._columnWidthsPrev);
+		std::swap(_layers[l]._columnDutyCycles, _layers[l]._columnDutyCyclesPrev);
 		std::swap(_layers[l]._columnWeights, _layers[l]._columnWeightsPrev);
 		std::swap(_layers[l]._cellStates, _layers[l]._cellStatesPrev);
 		std::swap(_layers[l]._cellPredictions, _layers[l]._cellPredictionsPrev);
@@ -374,9 +375,9 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, unsigned
 
 		// Activation
 		_layerColumnActivateKernel.setArg(0, *pPrevColumnStates);
-		_layerColumnActivateKernel.setArg(1, _layers[l]._columnActivations);
-		_layerColumnActivateKernel.setArg(2, _layers[l]._columnWidthsPrev);
-		_layerColumnActivateKernel.setArg(3, _layers[l]._columnWeightsPrev);
+		_layerColumnActivateKernel.setArg(1, _layers[l]._columnDutyCyclesPrev);
+		_layerColumnActivateKernel.setArg(2, _layers[l]._columnWeightsPrev);
+		_layerColumnActivateKernel.setArg(3, _layers[l]._columnActivations);
 		_layerColumnActivateKernel.setArg(4, layerSizeInv);
 		_layerColumnActivateKernel.setArg(5, inputReceptiveFieldRadius);
 		_layerColumnActivateKernel.setArg(6, inputReceptiveFieldStep);
@@ -568,7 +569,7 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 	return totalSum;
 }
 
-void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float widthAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha) {
+void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha) {
 	int prevLayerWidth = _inputWidth;
 	int prevLayerHeight = _inputHeight;
 	cl::Image2D* pPrevColumnStates = &_inputImage;
@@ -609,16 +610,12 @@ void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionA
 		// Column weight update
 		_layerColumnWeightUpdateKernel.setArg(0, *pPrevColumnStates);
 		_layerColumnWeightUpdateKernel.setArg(1, _layers[l]._columnStates);
-		_layerColumnWeightUpdateKernel.setArg(2, _layers[l]._columnWidthsPrev);
-		_layerColumnWeightUpdateKernel.setArg(3, _layers[l]._columnWeightsPrev);
-		_layerColumnWeightUpdateKernel.setArg(4, _layers[l]._columnWidths);
-		_layerColumnWeightUpdateKernel.setArg(5, _layers[l]._columnWeights);
-		_layerColumnWeightUpdateKernel.setArg(6, layerSizeInv);
-		_layerColumnWeightUpdateKernel.setArg(7, inputReceptiveFieldRadius);
-		_layerColumnWeightUpdateKernel.setArg(8, inputReceptiveFieldStep);
-		_layerColumnWeightUpdateKernel.setArg(9, columnConnectionAlpha);
-		_layerColumnWeightUpdateKernel.setArg(10, widthAlpha);
-		_layerColumnWeightUpdateKernel.setArg(11, columnWidthAlpha);
+		_layerColumnWeightUpdateKernel.setArg(2, _layers[l]._columnWeightsPrev);
+		_layerColumnWeightUpdateKernel.setArg(3, _layers[l]._columnWeights);
+		_layerColumnWeightUpdateKernel.setArg(4, layerSizeInv);
+		_layerColumnWeightUpdateKernel.setArg(5, inputReceptiveFieldRadius);
+		_layerColumnWeightUpdateKernel.setArg(6, inputReceptiveFieldStep);
+		_layerColumnWeightUpdateKernel.setArg(7, columnConnectionAlpha);
 
 		cs.getQueue().enqueueNDRangeKernel(_layerColumnWeightUpdateKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 
@@ -779,14 +776,56 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 	}
 }
 
-void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float widthAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator) {
+void HTMRL::updateDutyCycles(sys::ComputeSystem &cs, float dutyCycleDecay) {
+	struct Int2 {
+		int _x, _y;
+	};
+
+	struct Float2 {
+		float _x, _y;
+	};
+
+	for (int l = 0; l < _layers.size(); l++) {
+		Float2 layerSizeInv;
+		layerSizeInv._x = 1.0f / _layerDescs[l]._width;
+		layerSizeInv._y = 1.0f / _layerDescs[l]._height;
+
+		Int2 layerInhibitionRadius;
+		layerInhibitionRadius._x = _layerDescs[l]._inhibitionRadius;
+		layerInhibitionRadius._y = _layerDescs[l]._inhibitionRadius;
+
+		Float2 layerInhibitionStep;
+		layerInhibitionStep._x = layerSizeInv._x * _layerDescs[l]._inhibitionRadius;
+		layerInhibitionStep._y = layerSizeInv._y * _layerDescs[l]._inhibitionRadius;
+
+		_layerColumnDutyCycleUpdateKernel.setArg(0, _layers[l]._columnDutyCyclesPrev);
+		_layerColumnDutyCycleUpdateKernel.setArg(1, _layers[l]._columnStates);
+		_layerColumnDutyCycleUpdateKernel.setArg(2, _layers[l]._columnDutyCycles);
+		_layerColumnDutyCycleUpdateKernel.setArg(3, layerInhibitionRadius);
+		_layerColumnDutyCycleUpdateKernel.setArg(4, layerInhibitionStep);
+		_layerColumnDutyCycleUpdateKernel.setArg(5, layerSizeInv);
+		_layerColumnDutyCycleUpdateKernel.setArg(6, dutyCycleDecay);
+
+		cs.getQueue().enqueueNDRangeKernel(_layerColumnDutyCycleUpdateKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
+
+		cs.getQueue().flush();
+	}
+}
+
+void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float dutyCycleDecay, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator) {
 	stepBegin();
 	
 	_output = _input;
 
+	float predictionError = 0.0f;
+
 	for (int j = 0; j < _output.size(); j++)
 	if (_actionMask[j])
 		_output[j] = std::min<float>(1.0f, std::max<float>(-1.0f, _prevPrediction[j]));
+	else
+		predictionError += std::pow(_input[j] - _prevPrediction[j], 2);
+
+	std::cout << "error: " << predictionError << std::endl;
 
 	std::uniform_int_distribution<int> seedDist(0, 10000);
 
@@ -833,6 +872,10 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 		perturbationMultiplier *= annealingDecay;
 	}
 
+	activate(_output, cs, seed);
+
+	learnSpatialTemporal(cs, columnConnectionAlpha, cellConnectionAlpha, reconstructionAlpha);
+
 	// Exploratory action
 	std::normal_distribution<float> outputPerturbationDist(0.0f, outputPerturbationStdDev);
 
@@ -865,12 +908,12 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	_prevMaxQ = maxQ;
 	_prevValue = exploratoryQ;
 
-	learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, columnWidthAlpha, cellConnectionAlpha, reconstructionAlpha);
-
 	learnQ(cs, tdError, cellQWeightEligibilityDecay, qBiasAlpha);
 
 	// Get prediction for next action
 	getReconstructedPrediction(_prevPrediction, cs);
+
+	updateDutyCycles(cs, dutyCycleDecay);
 
 	_prevInput = _output;
 

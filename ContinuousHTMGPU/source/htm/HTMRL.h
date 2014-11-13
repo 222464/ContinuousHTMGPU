@@ -38,8 +38,8 @@ namespace htm {
 
 			cl::Image2D _columnActivations;
 
-			cl::Image2D _columnWidthsPrev;
-			cl::Image2D _columnWidths;
+			cl::Image2D _columnDutyCyclesPrev;
+			cl::Image2D _columnDutyCycles;
 
 			cl::Image2D _columnStatesPrev;
 			cl::Image2D _columnStates;
@@ -67,6 +67,7 @@ namespace htm {
 
 		cl::Kernel _layerColumnActivateKernel;
 		cl::Kernel _layerColumnInhibitKernel;
+		cl::Kernel _layerColumnDutyCycleUpdateKernel;
 		cl::Kernel _layerCellActivateKernel;
 		cl::Kernel _layerCellWeightUpdateKernel;
 		cl::Kernel _layerCellWeightUpdateLastKernel;
@@ -110,15 +111,17 @@ namespace htm {
 
 		float retrieveQ(sys::ComputeSystem &cs);
 
-		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float widthAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha);
+		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha);
 		void learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay, float qBiasAlpha);
 
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
 
+		void updateDutyCycles(sys::ComputeSystem &cs, float dutyCycleDecay);
+
 	public:
 		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float widthAlpha, float columnWidthAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float dutyCycleDecay, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
