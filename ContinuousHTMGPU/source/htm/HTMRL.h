@@ -28,7 +28,7 @@ namespace htm {
 			float _qInfluenceMultiplier;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(2), _lateralConnectionRadius(3), _inhibitionRadius(4), _cellsInColumn(3), _qInfluenceMultiplier(1.0f)
+				: _width(16), _height(16), _receptiveFieldRadius(3), _lateralConnectionRadius(4), _inhibitionRadius(4), _cellsInColumn(3), _qInfluenceMultiplier(1.0f)
 			{}
 		};
 	private:
@@ -58,9 +58,6 @@ namespace htm {
 
 			cl::Image3D _cellQWeightsPrev;
 			cl::Image3D _cellQWeights;
-
-			cl::Image2D _columnOutputsPrev;
-			cl::Image2D _columnOutputs;
 		};
 
 		int _inputWidth, _inputHeight;
@@ -77,7 +74,6 @@ namespace htm {
 		cl::Kernel _layerCellPredictLastKernel;
 		cl::Kernel _layerColumnWeightUpdateKernel;
 		cl::Kernel _layerColumnPredictionKernel;
-		cl::Kernel _layerColumnOutputKernel;
 		cl::Kernel _layerRetrievePartialQSumsKernel;
 		cl::Kernel _layerDownsampleKernel;
 		cl::Kernel _layerUpdateQWeightsKernel;

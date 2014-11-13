@@ -138,17 +138,17 @@ int main() {
 
 	layerDescs[0]._width = 64;
 	layerDescs[0]._height = 34;
-	layerDescs[0]._inhibitionRadius = 3;
+	layerDescs[0]._inhibitionRadius = 4;
 	layerDescs[0]._qInfluenceMultiplier = 0.25f;
 
 	layerDescs[1]._width = 48;
 	layerDescs[1]._height = 25;
-	layerDescs[1]._inhibitionRadius = 3;
+	layerDescs[1]._inhibitionRadius = 4;
 	layerDescs[1]._qInfluenceMultiplier = 0.5f;
 
 	layerDescs[2]._width = 32;
 	layerDescs[2]._height = 16;
-	layerDescs[2]._inhibitionRadius = 3;
+	layerDescs[2]._inhibitionRadius = 4;
 	layerDescs[2]._qInfluenceMultiplier = 1.0f;
 
 	std::vector<bool> actionMask(64 * 34, false);
@@ -223,7 +223,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.06f, 0.06f, 0.06f, 0.06f, 0.04f, 0.015f, 0.005f, 4, 0.5f, 0.05f, 0.8f, 0.4f, 0.05f, 0.99f, 0.0f, 0.01f, 0.01f, generator);
+		agent.step(cs, reward, 0.06f, 0.06f, 0.06f, 0.06f, 0.04f, 0.015f, 0.005f, 4, 0.3f, 0.05f, 0.8f, 0.4f, 0.05f, 0.99f, 0.0f, 0.01f, 0.01f, generator);
 
 		float output = 0.0f;
 
