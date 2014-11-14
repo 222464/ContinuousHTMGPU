@@ -249,7 +249,7 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 	}
 }
 
-void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellPredictionsPrev, read_only image2d_t nextLayerContextPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
+void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only image3d_t cellStatesPrev, read_only image2d_t nextLayerContextPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
 	write_only image3d_t cellWeights, int cellsInColumn, int layerWidth, int2 lateralConnectionsRadii, float2 layerSizeInv, float alpha)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
@@ -260,8 +260,6 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 	float predictionError = (columnState - columnPredictionPrev);
 		
 	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float prediction = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
 		
 		// Go through all connections and update them
@@ -311,7 +309,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 	}
 }
 
-void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
+void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
 	write_only image3d_t cellWeights, int cellsInColumn, int layerWidth, int2 lateralConnectionsRadii, float alpha)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
@@ -322,8 +320,6 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 	float predictionError = (columnState - columnPredictionPrev);
 		
 	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float prediction = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
 		
 		// Go through all connections and update them

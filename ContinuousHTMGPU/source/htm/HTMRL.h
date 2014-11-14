@@ -86,8 +86,9 @@ namespace htm {
 
 		std::vector<bool> _actionMask;
 
-		std::vector<float> _output;
-		std::vector<float> _prevPrediction;
+		std::vector<float> _exploratoryOutput;
+		std::vector<float> _prevOutput;
+		std::vector<float> _prevOutputExploratory;
 		std::vector<float> _prevInput;
 
 		float _qBias;
@@ -111,7 +112,7 @@ namespace htm {
 
 		float retrieveQ(sys::ComputeSystem &cs);
 
-		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha);
+		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha, bool learnPrediction);
 		void learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay, float qBiasAlpha);
 
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
@@ -144,7 +145,7 @@ namespace htm {
 		}
 
 		float getOutput(int i) const {
-			return _output[i];
+			return _exploratoryOutput[i];
 		}
 
 		float getOutput(int x, int y) const {
