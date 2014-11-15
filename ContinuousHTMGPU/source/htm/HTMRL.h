@@ -11,7 +11,7 @@
 
 #include <memory>
 
-#define HTMRL_GPU_Q_SUMMATION 1
+#define HTMRL_GPU_Q_SUMMATION 0
 
 namespace htm {
 	class HTMRL {
@@ -28,7 +28,7 @@ namespace htm {
 			float _qInfluenceMultiplier;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(3), _lateralConnectionRadius(4), _inhibitionRadius(4), _cellsInColumn(3), _qInfluenceMultiplier(1.0f)
+				: _width(16), _height(16), _receptiveFieldRadius(4), _lateralConnectionRadius(4), _inhibitionRadius(4), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
 			{}
 		};
 	private:
@@ -112,7 +112,7 @@ namespace htm {
 
 		float retrieveQ(sys::ComputeSystem &cs);
 
-		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha, bool learnPrediction);
+		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha, bool learnSDR, bool learnPrediction, bool learnReconstruction);
 		void learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay, float qBiasAlpha);
 
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);

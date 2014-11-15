@@ -9,7 +9,7 @@ void HTMRLVisualizer::create(unsigned int width) {
 void HTMRLVisualizer::update(sf::RenderTexture &target, const sf::Vector2f &position, const sf::Vector2f &scale, sys::ComputeSystem &cs, const htm::HTMRL &htmrl, std::mt19937 &generator) {
 	std::vector<std::shared_ptr<sf::Image>> images;
 
-	htmrl.exportCellData(cs, images, 5353);
+	htmrl.exportCellData(cs, images, 5634);
 
 	const float heightStep = 1.0f;
 	const float transparency = 0.3f;
