@@ -112,7 +112,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 		_layers[l]._cellQWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._cellsInColumn);
 		_layers[l]._cellQWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._cellsInColumn);
 
-		_layers[l]._columnQActivations = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
+		_layers[l]._columnQActivations = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 		
 		_layers[l]._columnQErrors = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 
@@ -532,10 +532,11 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 
 	for (int l = 0; l < _layers.size(); l++) {
 		if (l == 0) {
-			_layerRetrieveQFirstKernel.setArg(0, _layers[l]._cellStates);
-			_layerRetrieveQFirstKernel.setArg(1, _layers[l]._cellQWeightsPrev);
-			_layerRetrieveQFirstKernel.setArg(2, _layers[l]._columnQActivations);
-			_layerRetrieveQFirstKernel.setArg(3, _layerDescs[l]._cellsInColumn);
+			_layerRetrieveQFirstKernel.setArg(0, _layers[l]._columnWeightsPrev);
+			_layerRetrieveQFirstKernel.setArg(1, _layers[l]._cellStates);
+			_layerRetrieveQFirstKernel.setArg(2, _layers[l]._cellQWeightsPrev);
+			_layerRetrieveQFirstKernel.setArg(3, _layers[l]._columnQActivations);
+			_layerRetrieveQFirstKernel.setArg(4, _layerDescs[l]._cellsInColumn);
 
 			cs.getQueue().enqueueNDRangeKernel(_layerRetrieveQFirstKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 		}
@@ -564,22 +565,23 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 			inputReceptiveFieldStep._x = inputSizeInv._x * _layerDescs[l]._receptiveFieldRadius;
 			inputReceptiveFieldStep._y = inputSizeInv._y * _layerDescs[l]._receptiveFieldRadius;
 
-			_layerRetrieveQKernel.setArg(0, _layers[l - 1]._columnQActivations);
-			_layerRetrieveQKernel.setArg(1, _layers[l]._cellStates);
-			_layerRetrieveQKernel.setArg(2, _layers[l]._cellQWeightsPrev);
-			_layerRetrieveQKernel.setArg(3, _layers[l]._columnQActivations);
-			_layerRetrieveQKernel.setArg(4, _layerDescs[l]._cellsInColumn);
-			_layerRetrieveQKernel.setArg(5, layerSizeInv);
-			_layerRetrieveQKernel.setArg(6, inputReceptiveFieldRadius);
-			_layerRetrieveQKernel.setArg(7, inputReceptiveFieldStep);
-			_layerRetrieveQKernel.setArg(8, inputSize);
+			_layerRetrieveQKernel.setArg(0, _layers[l]._columnWeightsPrev);
+			_layerRetrieveQKernel.setArg(1, _layers[l - 1]._columnQActivations);
+			_layerRetrieveQKernel.setArg(2, _layers[l]._cellStates);
+			_layerRetrieveQKernel.setArg(3, _layers[l]._cellQWeightsPrev);
+			_layerRetrieveQKernel.setArg(4, _layers[l]._columnQActivations);
+			_layerRetrieveQKernel.setArg(5, _layerDescs[l]._cellsInColumn);
+			_layerRetrieveQKernel.setArg(6, layerSizeInv);
+			_layerRetrieveQKernel.setArg(7, inputReceptiveFieldRadius);
+			_layerRetrieveQKernel.setArg(8, inputReceptiveFieldStep);
+			_layerRetrieveQKernel.setArg(9, inputSize);
 
 			cs.getQueue().enqueueNDRangeKernel(_layerRetrieveQKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 		}
 	}
 
 	// Retrieve result
-	std::vector<float> result(_layerDescs.back()._width * _layerDescs.back()._height);
+	std::vector<float> result(_layerDescs.back()._width * _layerDescs.back()._height * 2);
 
 	{
 		cl::size_t<3> origin;
@@ -595,7 +597,7 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 		cs.getQueue().enqueueReadImage(_layers.back()._columnQActivations, CL_TRUE, origin, region, 0, 0, &result[0]);
 	}
 
-	for (int i = 0; i < result.size(); i++)
+	for (int i = 0; i < result.size(); i += 2)
 		totalSum += result[i];
 
 	return totalSum;
@@ -764,13 +766,15 @@ void HTMRL::retrieveQErrors(sys::ComputeSystem &cs, float tdError) {
 		float _x, _y;
 	};
 
-	for (int l = 0; l < _layers.size(); l++) {
+	for (int l = _layers.size() - 1; l >= 0; l--) {
 		if (l == _layers.size() - 1) {
-			_layerQErrorsLastKernel.setArg(0, _layers[l]._cellStates);
-			_layerQErrorsLastKernel.setArg(1, _layers[l]._cellQWeightsPrev);
-			_layerQErrorsLastKernel.setArg(2, _layers[l]._columnQErrors);
-			_layerQErrorsLastKernel.setArg(3, _layerDescs[l]._cellsInColumn);
-			_layerQErrorsLastKernel.setArg(4, tdError);
+			_layerQErrorsLastKernel.setArg(0, _layers[l]._columnWeightsPrev);
+			_layerQErrorsLastKernel.setArg(1, _layers[l]._columnQActivations);
+			_layerQErrorsLastKernel.setArg(2, _layers[l]._cellStates);
+			_layerQErrorsLastKernel.setArg(3, _layers[l]._cellQWeightsPrev);
+			_layerQErrorsLastKernel.setArg(4, _layers[l]._columnQErrors);
+			_layerQErrorsLastKernel.setArg(5, _layerDescs[l]._cellsInColumn);
+			_layerQErrorsLastKernel.setArg(6, tdError);
 
 			cs.getQueue().enqueueNDRangeKernel(_layerQErrorsLastKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 		}
@@ -791,13 +795,27 @@ void HTMRL::retrieveQErrors(sys::ComputeSystem &cs, float tdError) {
 			layerSizeInv._x = 1.0f / _layerDescs[l]._width;
 			layerSizeInv._y = 1.0f / _layerDescs[l]._height;
 
-			_layerQErrorsKernel.setArg(0, _layers[l + 1]._columnQErrors);
-			_layerQErrorsKernel.setArg(1, _layers[l]._cellStates);
-			_layerQErrorsKernel.setArg(2, _layers[l]._cellQWeightsPrev);
-			_layerQErrorsKernel.setArg(3, _layers[l]._columnQErrors);
-			_layerQErrorsKernel.setArg(4, layerSizeInv);
-			_layerQErrorsKernel.setArg(5, nextLayerSize);
-			_layerQErrorsKernel.setArg(6, _layerDescs[l]._cellsInColumn);
+			Int2 outputReceptiveFieldRadius;
+			outputReceptiveFieldRadius._x = _layerDescs[l + 1]._receptiveFieldRadius;
+			outputReceptiveFieldRadius._y = _layerDescs[l + 1]._receptiveFieldRadius;
+
+			outputReceptiveFieldRadius._x = outputReceptiveFieldRadius._y = std::max<float>(std::ceil(_layerDescs[l + 1]._receptiveFieldRadius * (nextLayerSize._x * layerSizeInv._x)), std::ceil(_layerDescs[l + 1]._receptiveFieldRadius * (nextLayerSize._y * layerSizeInv._y)));
+	
+			Float2 outputReceptiveFieldStep;
+			outputReceptiveFieldStep._x = nextLayerSizeInv._x * outputReceptiveFieldRadius._x;
+			outputReceptiveFieldStep._y = nextLayerSizeInv._y * outputReceptiveFieldRadius._y;
+
+			_layerQErrorsKernel.setArg(0, _layers[l]._columnWeightsPrev);
+			_layerQErrorsKernel.setArg(1, _layers[l]._columnQActivations);
+			_layerQErrorsKernel.setArg(2, _layers[l + 1]._columnQErrors);
+			_layerQErrorsKernel.setArg(3, _layers[l]._cellStates);
+			_layerQErrorsKernel.setArg(4, _layers[l]._cellQWeightsPrev);
+			_layerQErrorsKernel.setArg(5, _layers[l]._columnQErrors);
+			_layerQErrorsKernel.setArg(6, layerSizeInv);
+			_layerQErrorsKernel.setArg(7, nextLayerSize);
+			_layerQErrorsKernel.setArg(8, _layerDescs[l]._cellsInColumn);
+			_layerQErrorsKernel.setArg(9, outputReceptiveFieldRadius);
+			_layerQErrorsKernel.setArg(10, outputReceptiveFieldStep);
 
 			cs.getQueue().enqueueNDRangeKernel(_layerQErrorsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 		}
@@ -815,7 +833,7 @@ void HTMRL::updateQWeights(sys::ComputeSystem &cs, float tdError, float cellQWei
 		float _x, _y;
 	};
 
-	for (int l = 0; l < _layers.size(); l++) {
+	for (int l = _layers.size() - 1; l >= 0; l--) {
 		if (l == _layers.size() - 1) {
 			_layerUpdateQWeightsLastKernel.setArg(0, _layers[l]._columnQActivations);
 			_layerUpdateQWeightsLastKernel.setArg(1, _layers[l]._cellStates);
