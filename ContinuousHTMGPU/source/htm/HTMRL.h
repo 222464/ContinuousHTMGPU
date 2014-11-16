@@ -58,6 +58,9 @@ namespace htm {
 
 			cl::Image3D _cellQWeightsPrev;
 			cl::Image3D _cellQWeights;
+
+			cl::Image2D _columnQActivations;
+			cl::Image2D _columnQErrors;
 		};
 
 		int _inputWidth, _inputHeight;
@@ -75,8 +78,11 @@ namespace htm {
 		cl::Kernel _layerCellPredictLastKernel;
 		cl::Kernel _layerColumnWeightUpdateKernel;
 		cl::Kernel _layerColumnPredictionKernel;
-		cl::Kernel _layerRetrievePartialQSumsKernel;
-		cl::Kernel _layerDownsampleKernel;
+		cl::Kernel _layerRetrieveQFirstKernel;
+		cl::Kernel _layerRetrieveQKernel;
+		cl::Kernel _layerQErrorsLastKernel;
+		cl::Kernel _layerQErrorsKernel;
+		cl::Kernel _layerUpdateQWeightsLastKernel;
 		cl::Kernel _layerUpdateQWeightsKernel;
 
 		cl::Kernel _reconstructInputKernel;
@@ -97,8 +103,8 @@ namespace htm {
 
 		cl::Image2D _inputImage;
 
-		cl::Image2D _qSummationBuffer;
-		cl::Image2D _halfQSummationBuffer;
+		cl::Image2D _maxBufferPing;
+		cl::Image2D _maxBufferPong;
 
 		cl::Image3D _reconstructionWeightsPrev;
 		cl::Image3D _reconstructionWeights;
@@ -113,7 +119,9 @@ namespace htm {
 		float retrieveQ(sys::ComputeSystem &cs);
 
 		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha, bool learnSDR, bool learnPrediction, bool learnReconstruction);
-		void learnQ(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay, float qBiasAlpha);
+		
+		void retrieveQErrors(sys::ComputeSystem &cs, float tdError);
+		void updateQWeights(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay, float qBiasAlpha);
 
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
 
