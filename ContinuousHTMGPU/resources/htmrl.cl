@@ -546,7 +546,7 @@ void kernel layerQErrorsLast(read_only image3d_t cellStates, read_only image3d_t
 	write_imagef(columnQErrors, columnPosition, (float4)(columnError, columnError, columnError, columnError));
 }
 
-void kernel layerQErrors(read_imagef image2d_t nextLayerColumnQErrors, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image2d_t columnQErrors, float2 layerSizeInv, int2 nextLayerSize, int cellsInColumn) {
+void kernel layerQErrors(read_only image2d_t nextLayerColumnQErrors, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image2d_t columnQErrors, float2 layerSizeInv, int2 nextLayerSize, int cellsInColumn) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 columnPositionNormalized = (float2)(columnPosition.x * layerSizeInv.x, columnPosition.y * layerSizeInv.y);
 	int2 inputPosition = (int2)(columnPositionNormalized.x * nextLayerSize.x, columnPositionNormalized.y * nextLayerSize.y);
@@ -571,7 +571,7 @@ void kernel layerQErrors(read_imagef image2d_t nextLayerColumnQErrors, read_only
 void kernel layerUpdateQWeightsLast(read_only image2d_t columnQActivations, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image3d_t cellQWeights, int cellsInColumn, float elgibilityDecay, float error) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 
-	float2 columnSum = read_imagef(columnQActivations, columnPosition).y;
+	float columnSum = read_imagef(columnQActivations, columnPosition).y;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
@@ -586,12 +586,12 @@ void kernel layerUpdateQWeightsLast(read_only image2d_t columnQActivations, read
 	}
 }
 
-void kernel layerUpdateQWeights(read_imagef image2d_t nextLayerColumnQErrors, read_only image2d_t columnQActivations, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image3d_t cellQWeights, float2 layerSizeInv, int2 nextLayerSize, int cellsInColumn, float elgibilityDecay) {
+void kernel layerUpdateQWeights(read_only image2d_t nextLayerColumnQErrors, read_only image2d_t columnQActivations, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image3d_t cellQWeights, float2 layerSizeInv, int2 nextLayerSize, int cellsInColumn, float elgibilityDecay) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 columnPositionNormalized = (float2)(columnPosition.x * layerSizeInv.x, columnPosition.y * layerSizeInv.y);
 	int2 inputPosition = (int2)(columnPositionNormalized.x * nextLayerSize.x, columnPositionNormalized.y * nextLayerSize.y);
 	
-	float2 columnSum = read_imagef(columnQActivations, columnPosition).y;
+	float columnSum = read_imagef(columnQActivations, columnPosition).y;
 	
 	float error = read_imagef(nextLayerColumnQErrors, inputPosition).x;
 	

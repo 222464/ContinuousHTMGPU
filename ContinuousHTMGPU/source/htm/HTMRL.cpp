@@ -569,9 +569,10 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 			_layerRetrieveQKernel.setArg(2, _layers[l]._cellQWeightsPrev);
 			_layerRetrieveQKernel.setArg(3, _layers[l]._columnQActivations);
 			_layerRetrieveQKernel.setArg(4, _layerDescs[l]._cellsInColumn);
-			_layerRetrieveQKernel.setArg(5, inputReceptiveFieldRadius);
-			_layerRetrieveQKernel.setArg(6, inputReceptiveFieldStep);
-			_layerRetrieveQKernel.setArg(7, inputSize);
+			_layerRetrieveQKernel.setArg(5, layerSizeInv);
+			_layerRetrieveQKernel.setArg(6, inputReceptiveFieldRadius);
+			_layerRetrieveQKernel.setArg(7, inputReceptiveFieldStep);
+			_layerRetrieveQKernel.setArg(8, inputSize);
 
 			cs.getQueue().enqueueNDRangeKernel(_layerRetrieveQKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 		}
