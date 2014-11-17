@@ -41,6 +41,8 @@ namespace htm {
 			cl::Image2D _columnDutyCyclesPrev;
 			cl::Image2D _columnDutyCycles;
 
+			cl::Image2D _columnAttentions;
+
 			cl::Image2D _columnStatesPrev;
 			cl::Image2D _columnStates;
 
@@ -120,7 +122,7 @@ namespace htm {
 
 		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha, bool learnSDR, bool learnPrediction, bool learnReconstruction);
 		
-		void retrieveQErrors(sys::ComputeSystem &cs, float tdError);
+		void retrieveQErrors(sys::ComputeSystem &cs, float error);
 		void updateQWeights(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay, float qBiasAlpha);
 
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
