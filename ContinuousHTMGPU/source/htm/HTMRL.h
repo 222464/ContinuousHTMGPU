@@ -11,8 +11,6 @@
 
 #include <memory>
 
-#define HTMRL_GPU_Q_SUMMATION 0
-
 namespace htm {
 	class HTMRL {
 	public:
@@ -61,8 +59,7 @@ namespace htm {
 			cl::Image3D _cellQWeightsPrev;
 			cl::Image3D _cellQWeights;
 
-			cl::Image2D _columnQActivations;
-			cl::Image2D _columnQErrors;
+			cl::Image2D _partialQSums;
 		};
 
 		int _inputWidth, _inputHeight;
@@ -80,11 +77,7 @@ namespace htm {
 		cl::Kernel _layerCellPredictLastKernel;
 		cl::Kernel _layerColumnWeightUpdateKernel;
 		cl::Kernel _layerColumnPredictionKernel;
-		cl::Kernel _layerRetrieveQFirstKernel;
 		cl::Kernel _layerRetrieveQKernel;
-		cl::Kernel _layerQErrorsLastKernel;
-		cl::Kernel _layerQErrorsKernel;
-		cl::Kernel _layerUpdateQWeightsLastKernel;
 		cl::Kernel _layerUpdateQWeightsKernel;
 
 		cl::Kernel _reconstructInputKernel;
@@ -122,7 +115,6 @@ namespace htm {
 
 		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha, bool learnSDR, bool learnPrediction, bool learnReconstruction);
 		
-		void retrieveQErrors(sys::ComputeSystem &cs, float error);
 		void updateQWeights(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay, float qBiasAlpha);
 
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);

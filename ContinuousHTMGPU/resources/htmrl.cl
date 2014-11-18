@@ -481,8 +481,10 @@ void kernel layerColumnPrediction(read_only image3d_t cellPredictions, read_only
 	write_imagef(columnPredictions, columnPosition, (float4)(output, output, output, output));
 }
 
-void kernel layerRetrieveQFirst(read_only image2d_t columnAttentions, read_only image3d_t columnWeightsPrev, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image2d_t columnQActivations, int cellsInColumn) {
+void kernel layerRetrieveQ(read_only image2d_t columnAttentions, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image2d_t partialQSums, int cellsInColumn) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
+
+	float columnAttention = read_imagef(columnAttentions, columnPosition).x;
 	
 	float sum = 0.0f;
 	
@@ -491,167 +493,21 @@ void kernel layerRetrieveQFirst(read_only image2d_t columnAttentions, read_only 
 	
 		float cellQWeight = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		sum += cellQWeight * cellState;
+		sum += cellQWeight * cellState * columnAttention;
 	}
-	
-	//float columnAttention = read_imagef(columnAttentions, columnPosition).x;
-	
-	float output = sum;
-	
-	write_imagef(columnQActivations, columnPosition, (float4)(output, 1.0f, 0.0f, 0.0f));
+
+	write_imagef(partialQSums, columnPosition, (float4)(sum, sum, sum, sum));
 }
 
-void kernel layerRetrieveQ(read_only image2d_t columnAttentions, read_only image3d_t columnWeightsPrev, read_only image2d_t inputColumnQActivations, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image2d_t columnQActivations, int cellsInColumn, float2 layerSizeInv, int2 inputReceptiveFieldRadius, float2 inputReceptiveFieldStep, int2 inputSize) {
+void kernel layerUpdateQWeights(read_only image2d_t columnAttentions, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image3d_t cellQWeights, int cellsInColumn, float elgibilityDecay, float tdError) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	float2 inputCenterPositionNormalized = (float2)(columnPosition.x * layerSizeInv.x, columnPosition.y * layerSizeInv.y);
-
-	float sum = 0.0f;
-
-	for (int dx = -inputReceptiveFieldRadius.x; dx <= inputReceptiveFieldRadius.x; dx++)
-	for (int dy = -inputReceptiveFieldRadius.y; dy <= inputReceptiveFieldRadius.y; dy++) {
-		float2 inputPositionNormalized = inputCenterPositionNormalized + (float2)(dx * inputReceptiveFieldStep.x, dy * inputReceptiveFieldStep.y);
-		int2 inputPosition = (int2)(inputPositionNormalized.x * inputSize.x, inputPositionNormalized.y * inputSize.y);
-		
-		if (inputPosition.x >= 0 && inputPosition.x < inputSize.x && inputPosition.y >= 0 && inputPosition.y < inputSize.y) {
-			float inputState = read_imagef(inputColumnQActivations, inputPosition).x;
-				
-			sum += inputState;
-		}
-	}
-	
-	float weight = 0.0f;
-	
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-	
-		float cellQWeight = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		weight += cellQWeight * cellState;
-	}
-	
-	//float columnAttention = read_imagef(columnAttentions, columnPosition).x;
-	
-	float output = sigmoid(sum) * 2.0f - 1.0f;
-	
-	float result = weight * output;
-	
-	write_imagef(columnQActivations, columnPosition, (float4)(result, output, 0.0f, 0.0f));
-}
-
-void kernel layerQErrorsLast(read_only image2d_t columnAttentions, read_only image3d_t columnWeightsPrev, read_only image2d_t columnQActivations, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image2d_t columnQErrors, int cellsInColumn) {
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	
-	float weight = 0.0f;
-	
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-	
-		float cellQWeight = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		weight += cellQWeight * cellState;
-	}
-	
-	//float columnAttention = read_imagef(columnAttentions, columnPosition).x;
-	
-	float2 columnQOutput = read_imagef(columnQActivations, columnPosition).xy;
-	
-	float sig = columnQOutput.y * 0.5f + 0.5f;
-	
-	float columnError = weight * sig * (1.0f - sig);
-	
-	write_imagef(columnQErrors, columnPosition, (float4)(columnError, columnError, columnError, columnError));
-}
-
-void kernel layerQErrors(read_only image2d_t columnAttentions, read_only image3d_t columnWeightsPrev, read_only image2d_t columnQActivations, read_only image2d_t nextLayerColumnQErrors, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image2d_t columnQErrors, float2 layerSizeInv, int2 nextLayerSize, int cellsInColumn, int2 outputReceptiveFieldRadius, float2 outputReceptiveFieldStep) {
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	float2 columnPositionNormalized = (float2)(columnPosition.x * layerSizeInv.x, columnPosition.y * layerSizeInv.y);
-	int2 inputPosition = (int2)(columnPositionNormalized.x * nextLayerSize.x, columnPositionNormalized.y * nextLayerSize.y);
-	
-	float inputError = 0.0f;
-	
-	float numErrors = 0.0f;
-	
-	for (int dx = -outputReceptiveFieldRadius.x; dx <= outputReceptiveFieldRadius.x; dx++)
-	for (int dy = -outputReceptiveFieldRadius.y; dy <= outputReceptiveFieldRadius.y; dy++) {
-		float2 outputPositionNormalized = columnPositionNormalized + (float2)(dx * outputReceptiveFieldStep.x, dy * outputReceptiveFieldStep.y);
-		int2 outputPosition = (int2)(outputPositionNormalized.x * nextLayerSize.x, outputPositionNormalized.y * nextLayerSize.y);
-		
-		if (outputPosition.x >= 0 && outputPosition.x < nextLayerSize.x && outputPosition.y >= 0 && outputPosition.y < nextLayerSize.y) {
-			float nextError = read_imagef(nextLayerColumnQErrors, outputPosition).x;
-				
-			inputError += nextError;
-			
-			numErrors++;
-		}
-	}
-	
-	inputError /= numErrors;
-	
-	float weight = 0.0f;
-	
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-	
-		float cellQWeight = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		weight += cellQWeight * cellState;
-	}
-	
-	float2 columnQOutput = read_imagef(columnQActivations, columnPosition).xy;
-	
-	float sig = columnQOutput.y * 0.5f + 0.5f;
-	
-	//float columnAttention = read_imagef(columnAttentions, columnPosition).x;
-	
-	float columnError = inputError * weight * sig * (1.0f - sig);
-	
-	write_imagef(columnQErrors, columnPosition, (float4)(columnError, columnError, columnError, columnError));
-}
-
-void kernel layerUpdateQWeightsLast(read_only image2d_t columnAttentions, read_only image2d_t columnQActivations, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image3d_t cellQWeights, int cellsInColumn, float elgibilityDecay, float tdError) {
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-
-	//float columnOutput = read_imagef(columnQActivations, columnPosition).y;
 	
 	float columnAttention = read_imagef(columnAttentions, columnPosition).x;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 	
-		float eligibility = cellState;
-		
-		float2 cellQWeightPrev = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
-		
-		float2 newCellQWeight = (float2)(cellQWeightPrev.x + tdError * cellQWeightPrev.y, (1.0f - elgibilityDecay) * cellQWeightPrev.y + eligibility);
-		
-		write_imagef(cellQWeights, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellQWeight.x, newCellQWeight.y, 0.0f, 0.0f));
-	}
-}
-
-void kernel layerUpdateQWeights(read_only image2d_t columnAttentions, read_only image2d_t nextLayerColumnQErrors, read_only image2d_t columnQActivations, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image3d_t cellQWeights, float2 layerSizeInv, int2 nextLayerSize, int cellsInColumn, int2 outputReceptiveFieldRadius, float2 outputReceptiveFieldStep, float elgibilityDecay, float tdError) {
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	float2 columnPositionNormalized = (float2)(columnPosition.x * layerSizeInv.x, columnPosition.y * layerSizeInv.y);
-	
-	float error = 0.0f;
-	
-	for (int dx = -outputReceptiveFieldRadius.x; dx <= outputReceptiveFieldRadius.x; dx++)
-	for (int dy = -outputReceptiveFieldRadius.y; dy <= outputReceptiveFieldRadius.y; dy++) {
-		float2 outputPositionNormalized = columnPositionNormalized + (float2)(dx * outputReceptiveFieldStep.x, dy * outputReceptiveFieldStep.y);
-		int2 outputPosition = (int2)(outputPositionNormalized.x * nextLayerSize.x, outputPositionNormalized.y * nextLayerSize.y);
-		
-		if (outputPosition.x >= 0 && outputPosition.x < nextLayerSize.x && outputPosition.y >= 0 && outputPosition.y < nextLayerSize.y) {
-			float nextError = read_imagef(nextLayerColumnQErrors, outputPosition).x;
-				
-			error += nextError;
-		}
-	}
-	
-	float columnAttention = read_imagef(columnAttentions, columnPosition).x;
-	
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-	
-		float eligibility = error * cellState;
+		float eligibility = columnAttention * cellState;
 		
 		float2 cellQWeightPrev = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		

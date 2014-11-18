@@ -114,10 +114,8 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 		_layers[l]._cellQWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._cellsInColumn);
 		_layers[l]._cellQWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._cellsInColumn);
 
-		_layers[l]._columnQActivations = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
+		_layers[l]._partialQSums = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 		
-		_layers[l]._columnQErrors = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
-
 		Uint2 seed1;
 		seed1._x = uniformDist(generator);
 		seed1._y = uniformDist(generator);
@@ -315,16 +313,10 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	_layerCellPredictLastKernel = cl::Kernel(program.getProgram(), "layerCellPredictLast");
 	_layerColumnWeightUpdateKernel = cl::Kernel(program.getProgram(), "layerColumnWeightUpdate");
 	_layerColumnPredictionKernel = cl::Kernel(program.getProgram(), "layerColumnPrediction");
-	_layerRetrieveQFirstKernel = cl::Kernel(program.getProgram(), "layerRetrieveQFirst");
 	_layerRetrieveQKernel = cl::Kernel(program.getProgram(), "layerRetrieveQ");
-	_layerQErrorsLastKernel = cl::Kernel(program.getProgram(), "layerQErrorsLast");
-	_layerQErrorsKernel = cl::Kernel(program.getProgram(), "layerQErrors");
-	_layerUpdateQWeightsLastKernel = cl::Kernel(program.getProgram(), "layerUpdateQWeightsLast");
 	_layerUpdateQWeightsKernel = cl::Kernel(program.getProgram(), "layerUpdateQWeights");
 	_reconstructInputKernel = cl::Kernel(program.getProgram(), "reconstructInput");
 	_updateReconstructionKernel = cl::Kernel(program.getProgram(), "updateReconstruction");
-
-	cs.getQueue().finish();
 }
 
 void HTMRL::stepBegin() {
@@ -359,8 +351,6 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, unsigned
 
 		cs.getQueue().enqueueWriteImage(_inputImage, CL_TRUE, origin, region, 0, 0, &input[0]);
 	}
-
-	cs.getQueue().finish();
 
 	int prevLayerWidth = _inputWidth;
 	int prevLayerHeight = _inputHeight;
@@ -518,6 +508,8 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, unsigned
 		_layerColumnPredictionKernel.setArg(3, _layerDescs[l]._cellsInColumn);
 
 		cs.getQueue().enqueueNDRangeKernel(_layerColumnPredictionKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
+
+		cs.getQueue().flush();
 	}
 }
 
@@ -533,76 +525,38 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 	};
 
 	for (int l = 0; l < _layers.size(); l++) {
-		if (l == 0) {
-			_layerRetrieveQFirstKernel.setArg(0, _layers[l]._columnAttentions);
-			_layerRetrieveQFirstKernel.setArg(1, _layers[l]._columnWeightsPrev);
-			_layerRetrieveQFirstKernel.setArg(2, _layers[l]._cellStates);
-			_layerRetrieveQFirstKernel.setArg(3, _layers[l]._cellQWeightsPrev);
-			_layerRetrieveQFirstKernel.setArg(4, _layers[l]._columnQActivations);
-			_layerRetrieveQFirstKernel.setArg(5, _layerDescs[l]._cellsInColumn);
+		_layerRetrieveQKernel.setArg(0, _layers[l]._columnAttentions);
+		_layerRetrieveQKernel.setArg(1, _layers[l]._cellStates);
+		_layerRetrieveQKernel.setArg(2, _layers[l]._cellQWeightsPrev);
+		_layerRetrieveQKernel.setArg(3, _layers[l]._partialQSums);
+		_layerRetrieveQKernel.setArg(4, _layerDescs[l]._cellsInColumn);
 
-			cs.getQueue().enqueueNDRangeKernel(_layerRetrieveQFirstKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
-		}
-		else {
-			Int2 inputSize;
-			inputSize._x = _layerDescs[l - 1]._width;
-			inputSize._y = _layerDescs[l - 1]._height;
+		cs.getQueue().enqueueNDRangeKernel(_layerRetrieveQKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 
-			Int2 layerSize;
-			layerSize._x = _layerDescs[l]._width;
-			layerSize._y = _layerDescs[l]._height;
-
-			Float2 inputSizeInv;
-			inputSizeInv._x = 1.0f / inputSize._x;
-			inputSizeInv._y = 1.0f / inputSize._y;
-
-			Float2 layerSizeInv;
-			layerSizeInv._x = 1.0f / _layerDescs[l]._width;
-			layerSizeInv._y = 1.0f / _layerDescs[l]._height;
-
-			Int2 inputReceptiveFieldRadius;
-			inputReceptiveFieldRadius._x = _layerDescs[l]._receptiveFieldRadius;
-			inputReceptiveFieldRadius._y = _layerDescs[l]._receptiveFieldRadius;
-
-			Float2 inputReceptiveFieldStep;
-			inputReceptiveFieldStep._x = inputSizeInv._x * _layerDescs[l]._receptiveFieldRadius;
-			inputReceptiveFieldStep._y = inputSizeInv._y * _layerDescs[l]._receptiveFieldRadius;
-
-			_layerRetrieveQKernel.setArg(0, _layers[l]._columnAttentions);
-			_layerRetrieveQKernel.setArg(1, _layers[l]._columnWeightsPrev);
-			_layerRetrieveQKernel.setArg(2, _layers[l - 1]._columnQActivations);
-			_layerRetrieveQKernel.setArg(3, _layers[l]._cellStates);
-			_layerRetrieveQKernel.setArg(4, _layers[l]._cellQWeightsPrev);
-			_layerRetrieveQKernel.setArg(5, _layers[l]._columnQActivations);
-			_layerRetrieveQKernel.setArg(6, _layerDescs[l]._cellsInColumn);
-			_layerRetrieveQKernel.setArg(7, layerSizeInv);
-			_layerRetrieveQKernel.setArg(8, inputReceptiveFieldRadius);
-			_layerRetrieveQKernel.setArg(9, inputReceptiveFieldStep);
-			_layerRetrieveQKernel.setArg(10, inputSize);
-
-			cs.getQueue().enqueueNDRangeKernel(_layerRetrieveQKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
-		}
+		cs.getQueue().flush();
 	}
 
-	// Retrieve result
-	std::vector<float> result(_layerDescs.back()._width * _layerDescs.back()._height * 2);
+	for (int l = 0; l < _layers.size(); l++) {
+		// Retrieve result
+		std::vector<float> result(_layerDescs[l]._width * _layerDescs[l]._height);
 
-	{
-		cl::size_t<3> origin;
-		origin[0] = 0;
-		origin[1] = 0;
-		origin[2] = 0;
+		{
+			cl::size_t<3> origin;
+			origin[0] = 0;
+			origin[1] = 0;
+			origin[2] = 0;
 
-		cl::size_t<3> region;
-		region[0] = _layerDescs.back()._width;
-		region[1] = _layerDescs.back()._height;
-		region[2] = 1;
+			cl::size_t<3> region;
+			region[0] = _layerDescs[l]._width;
+			region[1] = _layerDescs[l]._height;
+			region[2] = 1;
 
-		cs.getQueue().enqueueReadImage(_layers.back()._columnQActivations, CL_TRUE, origin, region, 0, 0, &result[0]);
+			cs.getQueue().enqueueReadImage(_layers[l]._partialQSums, CL_TRUE, origin, region, 0, 0, &result[0]);
+		}
+
+		for (int i = 0; i < result.size(); i++)
+			totalSum += result[i] * _layerDescs[l]._qInfluenceMultiplier;
 	}
-
-	for (int i = 0; i < result.size(); i += 2)
-		totalSum += result[i];
 
 	return totalSum;
 }
@@ -758,69 +712,8 @@ void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionA
 		_updateReconstructionKernel.setArg(9, reconstructionAlpha);
 
 		cs.getQueue().enqueueNDRangeKernel(_updateReconstructionKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
-	}
-}
 
-void HTMRL::retrieveQErrors(sys::ComputeSystem &cs, float error) {
-	struct Int2 {
-		int _x, _y;
-	};
-
-	struct Float2 {
-		float _x, _y;
-	};
-
-	for (int l = _layers.size() - 1; l >= 0; l--) {
-		if (l == _layers.size() - 1) {
-			_layerQErrorsLastKernel.setArg(0, _layers[l]._columnAttentions);
-			_layerQErrorsLastKernel.setArg(1, _layers[l]._columnWeightsPrev);
-			_layerQErrorsLastKernel.setArg(2, _layers[l]._columnQActivations);
-			_layerQErrorsLastKernel.setArg(3, _layers[l]._cellStates);
-			_layerQErrorsLastKernel.setArg(4, _layers[l]._cellQWeightsPrev);
-			_layerQErrorsLastKernel.setArg(5, _layers[l]._columnQErrors);
-			_layerQErrorsLastKernel.setArg(6, _layerDescs[l]._cellsInColumn);
-
-			cs.getQueue().enqueueNDRangeKernel(_layerQErrorsLastKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
-		}
-		else {
-			Int2 nextLayerSize;
-			nextLayerSize._x = _layerDescs[l + 1]._width;
-			nextLayerSize._y = _layerDescs[l + 1]._height;
-
-			Int2 layerSize;
-			layerSize._x = _layerDescs[l]._width;
-			layerSize._y = _layerDescs[l]._height;
-
-			Float2 nextLayerSizeInv;
-			nextLayerSizeInv._x = 1.0f / nextLayerSize._x;
-			nextLayerSizeInv._y = 1.0f / nextLayerSize._y;
-
-			Float2 layerSizeInv;
-			layerSizeInv._x = 1.0f / _layerDescs[l]._width;
-			layerSizeInv._y = 1.0f / _layerDescs[l]._height;
-
-			Int2 outputReceptiveFieldRadius;
-			outputReceptiveFieldRadius._x = outputReceptiveFieldRadius._y = std::max<float>(std::ceil(_layerDescs[l + 1]._receptiveFieldRadius * (nextLayerSize._x * layerSizeInv._x)), std::ceil(_layerDescs[l + 1]._receptiveFieldRadius * (nextLayerSize._y * layerSizeInv._y)));
-	
-			Float2 outputReceptiveFieldStep;
-			outputReceptiveFieldStep._x = nextLayerSizeInv._x * outputReceptiveFieldRadius._x;
-			outputReceptiveFieldStep._y = nextLayerSizeInv._y * outputReceptiveFieldRadius._y;
-
-			_layerQErrorsKernel.setArg(0, _layers[l]._columnAttentions);
-			_layerQErrorsKernel.setArg(1, _layers[l]._columnWeightsPrev);
-			_layerQErrorsKernel.setArg(2, _layers[l]._columnQActivations);
-			_layerQErrorsKernel.setArg(3, _layers[l + 1]._columnQErrors);
-			_layerQErrorsKernel.setArg(4, _layers[l]._cellStates);
-			_layerQErrorsKernel.setArg(5, _layers[l]._cellQWeightsPrev);
-			_layerQErrorsKernel.setArg(6, _layers[l]._columnQErrors);
-			_layerQErrorsKernel.setArg(7, layerSizeInv);
-			_layerQErrorsKernel.setArg(8, nextLayerSize);
-			_layerQErrorsKernel.setArg(9, _layerDescs[l]._cellsInColumn);
-			_layerQErrorsKernel.setArg(10, outputReceptiveFieldRadius);
-			_layerQErrorsKernel.setArg(11, outputReceptiveFieldStep);
-
-			cs.getQueue().enqueueNDRangeKernel(_layerQErrorsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
-		}
+		cs.getQueue().flush();
 	}
 }
 
@@ -836,58 +729,15 @@ void HTMRL::updateQWeights(sys::ComputeSystem &cs, float tdError, float cellQWei
 	};
 
 	for (int l = _layers.size() - 1; l >= 0; l--) {
-		if (l == _layers.size() - 1) {
-			_layerUpdateQWeightsLastKernel.setArg(0, _layers[l]._columnAttentions);
-			_layerUpdateQWeightsLastKernel.setArg(1, _layers[l]._columnQActivations);
-			_layerUpdateQWeightsLastKernel.setArg(2, _layers[l]._cellStates);
-			_layerUpdateQWeightsLastKernel.setArg(3, _layers[l]._cellQWeightsPrev);
-			_layerUpdateQWeightsLastKernel.setArg(4, _layers[l]._cellQWeights);
-			_layerUpdateQWeightsLastKernel.setArg(5, _layerDescs[l]._cellsInColumn);
-			_layerUpdateQWeightsLastKernel.setArg(6, cellQWeightEligibilityDecay);
-			_layerUpdateQWeightsLastKernel.setArg(7, tdError);
+		_layerUpdateQWeightsKernel.setArg(0, _layers[l]._columnAttentions);
+		_layerUpdateQWeightsKernel.setArg(1, _layers[l]._cellStates);
+		_layerUpdateQWeightsKernel.setArg(2, _layers[l]._cellQWeightsPrev);
+		_layerUpdateQWeightsKernel.setArg(3, _layers[l]._cellQWeights);
+		_layerUpdateQWeightsKernel.setArg(4, _layerDescs[l]._cellsInColumn);
+		_layerUpdateQWeightsKernel.setArg(5, cellQWeightEligibilityDecay);
+		_layerUpdateQWeightsKernel.setArg(6, tdError * _layerDescs[l]._qInfluenceMultiplier);
 
-			cs.getQueue().enqueueNDRangeKernel(_layerUpdateQWeightsLastKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
-		}
-		else {
-			Int2 nextLayerSize;
-			nextLayerSize._x = _layerDescs[l + 1]._width;
-			nextLayerSize._y = _layerDescs[l + 1]._height;
-
-			Int2 layerSize;
-			layerSize._x = _layerDescs[l]._width;
-			layerSize._y = _layerDescs[l]._height;
-
-			Float2 nextLayerSizeInv;
-			nextLayerSizeInv._x = 1.0f / nextLayerSize._x;
-			nextLayerSizeInv._y = 1.0f / nextLayerSize._y;
-
-			Float2 layerSizeInv;
-			layerSizeInv._x = 1.0f / _layerDescs[l]._width;
-			layerSizeInv._y = 1.0f / _layerDescs[l]._height;
-
-			Int2 outputReceptiveFieldRadius;
-			outputReceptiveFieldRadius._x = outputReceptiveFieldRadius._y = std::max<float>(std::ceil(_layerDescs[l + 1]._receptiveFieldRadius * (nextLayerSize._x * layerSizeInv._x)), std::ceil(_layerDescs[l + 1]._receptiveFieldRadius * (nextLayerSize._y * layerSizeInv._y)));
-
-			Float2 outputReceptiveFieldStep;
-			outputReceptiveFieldStep._x = nextLayerSizeInv._x * outputReceptiveFieldRadius._x;
-			outputReceptiveFieldStep._y = nextLayerSizeInv._y * outputReceptiveFieldRadius._y;
-
-			_layerUpdateQWeightsKernel.setArg(0, _layers[l]._columnAttentions);
-			_layerUpdateQWeightsKernel.setArg(1, _layers[l + 1]._columnQErrors);
-			_layerUpdateQWeightsKernel.setArg(2, _layers[l]._columnQActivations);
-			_layerUpdateQWeightsKernel.setArg(3, _layers[l]._cellStates);
-			_layerUpdateQWeightsKernel.setArg(4, _layers[l]._cellQWeightsPrev);
-			_layerUpdateQWeightsKernel.setArg(5, _layers[l]._cellQWeights);
-			_layerUpdateQWeightsKernel.setArg(6, layerSizeInv);
-			_layerUpdateQWeightsKernel.setArg(7, nextLayerSize);
-			_layerUpdateQWeightsKernel.setArg(8, _layerDescs[l]._cellsInColumn);
-			_layerUpdateQWeightsKernel.setArg(9, outputReceptiveFieldRadius);
-			_layerUpdateQWeightsKernel.setArg(10, outputReceptiveFieldStep);
-			_layerUpdateQWeightsKernel.setArg(11, cellQWeightEligibilityDecay);
-			_layerUpdateQWeightsKernel.setArg(12, tdError);
-
-			cs.getQueue().enqueueNDRangeKernel(_layerUpdateQWeightsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
-		}
+		cs.getQueue().enqueueNDRangeKernel(_layerUpdateQWeightsKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 	}
 }
 
@@ -925,6 +775,8 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 	_reconstructInputKernel.setArg(6, layerSizeInv);
 
 	cs.getQueue().enqueueNDRangeKernel(_reconstructInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
+
+	cs.getQueue().flush();
 
 	if (prediction.size() != _input.size())
 		prediction.resize(_input.size());
@@ -1146,7 +998,6 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	//activate(_input, cs, seed);
 
-	retrieveQErrors(cs, 1.0f);
 	updateQWeights(cs, tdError, cellQWeightEligibilityDecay, qBiasAlpha);
 
 	learnSpatialTemporal(cs, columnConnectionAlpha, cellConnectionAlpha, reconstructionAlpha, true, true, true);
