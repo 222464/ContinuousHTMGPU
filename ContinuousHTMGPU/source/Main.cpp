@@ -139,16 +139,19 @@ int main() {
 	layerDescs[0]._width = 64;
 	layerDescs[0]._height = 64;
 	layerDescs[0]._inhibitionRadius = 4;
+	layerDescs[0]._attentionRadius = 4;
 	layerDescs[0]._qInfluenceMultiplier = 0.444f;
 
 	layerDescs[1]._width = 48;
 	layerDescs[1]._height = 48;
 	layerDescs[1]._inhibitionRadius = 4;
+	layerDescs[1]._attentionRadius = 4;
 	layerDescs[1]._qInfluenceMultiplier = 0.666f;
 
 	layerDescs[2]._width = 32;
 	layerDescs[2]._height = 32;
 	layerDescs[2]._inhibitionRadius = 4;
+	layerDescs[2]._attentionRadius = 4;
 	layerDescs[2]._qInfluenceMultiplier = 1.0f;
 
 	std::vector<bool> actionMask(64 * 64, false);
@@ -158,7 +161,7 @@ int main() {
 		actionMask[x + y * 64] = true;
 	}
 
-	agent.createRandom(cs, program, 64, 64, layerDescs, actionMask, -0.25f, 0.25f, 0.01f, 0.1f, generator);
+	agent.createRandom(cs, program, 64, 64, layerDescs, actionMask, -0.05f, 0.05f, 0.01f, 0.1f, generator);
 
 	sf::RenderTexture htmRT;
 	htmRT.create(1024, 1024, false);
@@ -223,18 +226,18 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.1f, 0.02f, 0.1f, 0.1f, 0.02f, 0.0f, 4, 0.06f, 0.03f, 0.78f, 0.4f, 0.02f, 0.992f, 0.0f, 0.05f, 0.05f, generator);
+		agent.step(cs, reward, 0.1f, 0.02f, 0.1f, 0.2f, 0.02f, 0.0f, 4, 0.06f, 0.03f, 0.78f, 0.4f, 0.005f, 0.992f, 0.0f, 0.05f, 0.05f, generator);
 
-		float output = 0.0f;
+		/*float output = 0.0f;
 
 		for (int x = 0; x < 64; x++)
 		for (int y = 32; y < 64; y++) {
 			output += agent.getOutput(x, y);
 		}
 
-		output /= 32 * 64;
+		output /= 32 * 64;*/
 
-		//float output = agent.getOutput(34, 36) + agent.getOutput(35, 36) + agent.getOutput(36, 36) + agent.getOutput(37, 36);
+		float output = agent.getOutput(34, 36) + agent.getOutput(35, 36) + agent.getOutput(36, 36) + agent.getOutput(37, 36);
 
 		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, output * 4.0f));
 

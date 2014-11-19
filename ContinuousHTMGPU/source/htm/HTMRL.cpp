@@ -92,6 +92,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 		_layers[l]._columnDutyCyclesPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 
 		_layers[l]._columnAttentions = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
+		_layers[l]._columnAttentionsPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 
 		_layers[l]._columnStates = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
 		_layers[l]._columnStatesPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
@@ -115,7 +116,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 		_layers[l]._cellQWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._cellsInColumn);
 
 		_layers[l]._partialQSums = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs[l]._width, _layerDescs[l]._height);
-		
+
 		Uint2 seed1;
 		seed1._x = uniformDist(generator);
 		seed1._y = uniformDist(generator);
@@ -182,6 +183,21 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 			region[2] = 1;
 
 			cs.getQueue().enqueueCopyImage(_layers[l]._columnDutyCycles, _layers[l]._columnDutyCyclesPrev, origin, origin, region);
+		}
+
+		{
+			cl::size_t<3> origin;
+			cl::size_t<3> region;
+
+			origin[0] = 0;
+			origin[1] = 0;
+			origin[2] = 0;
+
+			region[0] = _layerDescs[l]._width;
+			region[1] = _layerDescs[l]._height;
+			region[2] = 1;
+
+			cs.getQueue().enqueueCopyImage(_layers[l]._columnAttentions, _layers[l]._columnAttentionsPrev, origin, origin, region);
 		}
 
 		{
@@ -323,6 +339,7 @@ void HTMRL::stepBegin() {
 	for (int l = 0; l < _layers.size(); l++) {
 		std::swap(_layers[l]._columnStates, _layers[l]._columnStatesPrev);
 		std::swap(_layers[l]._columnDutyCycles, _layers[l]._columnDutyCyclesPrev);
+		std::swap(_layers[l]._columnAttentions, _layers[l]._columnAttentionsPrev);
 		std::swap(_layers[l]._columnWeights, _layers[l]._columnWeightsPrev);
 		std::swap(_layers[l]._cellStates, _layers[l]._cellStatesPrev);
 		std::swap(_layers[l]._cellPredictions, _layers[l]._cellPredictionsPrev);
@@ -472,13 +489,14 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, unsigned
 
 		// Cell prediction
 		if (l == _layers.size() - 1) {
-			_layerCellPredictLastKernel.setArg(0, _layers[l]._columnStates);
-			_layerCellPredictLastKernel.setArg(1, _layers[l]._cellStates);
-			_layerCellPredictLastKernel.setArg(2, _layers[l]._cellWeightsPrev);
-			_layerCellPredictLastKernel.setArg(3, _layers[l]._cellPredictions);
-			_layerCellPredictLastKernel.setArg(4, _layerDescs[l]._cellsInColumn);
-			_layerCellPredictLastKernel.setArg(5, layerSize);
-			_layerCellPredictLastKernel.setArg(6, lateralConnectionRadii);
+			_layerCellPredictLastKernel.setArg(0, _layers[l]._columnAttentions);
+			_layerCellPredictLastKernel.setArg(1, _layers[l]._columnStates);
+			_layerCellPredictLastKernel.setArg(2, _layers[l]._cellStates);
+			_layerCellPredictLastKernel.setArg(3, _layers[l]._cellWeightsPrev);
+			_layerCellPredictLastKernel.setArg(4, _layers[l]._cellPredictions);
+			_layerCellPredictLastKernel.setArg(5, _layerDescs[l]._cellsInColumn);
+			_layerCellPredictLastKernel.setArg(6, layerSize);
+			_layerCellPredictLastKernel.setArg(7, lateralConnectionRadii);
 
 			cs.getQueue().enqueueNDRangeKernel(_layerCellPredictLastKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 		}
@@ -487,16 +505,17 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, unsigned
 			nextLayerSize._x = _layerDescs[l]._width;
 			nextLayerSize._y = _layerDescs[l]._height;
 
-			_layerCellPredictKernel.setArg(0, _layers[l]._columnStates);
-			_layerCellPredictKernel.setArg(1, _layers[l]._cellStates);
-			_layerCellPredictKernel.setArg(2, _layers[l]._cellWeightsPrev);
-			_layerCellPredictKernel.setArg(3, _layers[l + 1]._columnPredictions);
-			_layerCellPredictKernel.setArg(4, _layers[l]._cellPredictions);
-			_layerCellPredictKernel.setArg(5, _layerDescs[l]._cellsInColumn);
-			_layerCellPredictKernel.setArg(6, layerSize);
-			_layerCellPredictKernel.setArg(7, lateralConnectionRadii);
-			_layerCellPredictKernel.setArg(8, layerSizeInv);
-			_layerCellPredictKernel.setArg(9, nextLayerSize);
+			_layerCellPredictKernel.setArg(0, _layers[l]._columnAttentions);
+			_layerCellPredictKernel.setArg(1, _layers[l]._columnStates);
+			_layerCellPredictKernel.setArg(2, _layers[l]._cellStates);
+			_layerCellPredictKernel.setArg(3, _layers[l]._cellWeightsPrev);
+			_layerCellPredictKernel.setArg(4, _layers[l + 1]._columnPredictions);
+			_layerCellPredictKernel.setArg(5, _layers[l]._cellPredictions);
+			_layerCellPredictKernel.setArg(6, _layerDescs[l]._cellsInColumn);
+			_layerCellPredictKernel.setArg(7, layerSize);
+			_layerCellPredictKernel.setArg(8, lateralConnectionRadii);
+			_layerCellPredictKernel.setArg(9, layerSizeInv);
+			_layerCellPredictKernel.setArg(10, nextLayerSize);
 
 			cs.getQueue().enqueueNDRangeKernel(_layerCellPredictKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 		}
@@ -538,7 +557,7 @@ float HTMRL::retrieveQ(sys::ComputeSystem &cs) {
 
 	for (int l = 0; l < _layers.size(); l++) {
 		// Retrieve result
-		std::vector<float> result(_layerDescs[l]._width * _layerDescs[l]._height);
+		std::vector<float> result(_layerDescs[l]._width * _layerDescs[l]._height * 2);
 
 		{
 			cl::size_t<3> origin;
@@ -630,15 +649,16 @@ void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionA
 		// Lateral weight update
 		if (learnPrediction) {
 			if (l == _layers.size() - 1) {
-				_layerCellWeightUpdateLastKernel.setArg(0, _layers[l]._columnStates);
-				_layerCellWeightUpdateLastKernel.setArg(1, _layers[l]._cellStatesPrev);
-				_layerCellWeightUpdateLastKernel.setArg(2, _layers[l]._cellWeightsPrev);
-				_layerCellWeightUpdateLastKernel.setArg(3, _layers[l]._columnPredictionsPrev);
-				_layerCellWeightUpdateLastKernel.setArg(4, _layers[l]._cellWeights);
-				_layerCellWeightUpdateLastKernel.setArg(5, _layerDescs[l]._cellsInColumn);
-				_layerCellWeightUpdateLastKernel.setArg(6, layerSize);
-				_layerCellWeightUpdateLastKernel.setArg(7, lateralConnectionRadii);
-				_layerCellWeightUpdateLastKernel.setArg(8, cellConnectionAlpha);
+				_layerCellWeightUpdateLastKernel.setArg(0, _layers[l]._columnAttentionsPrev);
+				_layerCellWeightUpdateLastKernel.setArg(1, _layers[l]._columnStates);
+				_layerCellWeightUpdateLastKernel.setArg(2, _layers[l]._cellStatesPrev);
+				_layerCellWeightUpdateLastKernel.setArg(3, _layers[l]._cellWeightsPrev);
+				_layerCellWeightUpdateLastKernel.setArg(4, _layers[l]._columnPredictionsPrev);
+				_layerCellWeightUpdateLastKernel.setArg(5, _layers[l]._cellWeights);
+				_layerCellWeightUpdateLastKernel.setArg(6, _layerDescs[l]._cellsInColumn);
+				_layerCellWeightUpdateLastKernel.setArg(7, layerSize);
+				_layerCellWeightUpdateLastKernel.setArg(8, lateralConnectionRadii);
+				_layerCellWeightUpdateLastKernel.setArg(9, cellConnectionAlpha);
 
 				cs.getQueue().enqueueNDRangeKernel(_layerCellWeightUpdateLastKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 			}
@@ -647,18 +667,19 @@ void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionA
 				nextLayerSize._x = _layerDescs[l]._width;
 				nextLayerSize._y = _layerDescs[l]._height;
 
-				_layerCellWeightUpdateKernel.setArg(0, _layers[l]._columnStates);
-				_layerCellWeightUpdateKernel.setArg(1, _layers[l]._cellStatesPrev);
-				_layerCellWeightUpdateKernel.setArg(2, _layers[l + 1]._columnPredictions);
-				_layerCellWeightUpdateKernel.setArg(3, _layers[l]._cellWeightsPrev);
-				_layerCellWeightUpdateKernel.setArg(4, _layers[l]._columnPredictionsPrev);
-				_layerCellWeightUpdateKernel.setArg(5, _layers[l]._cellWeights);
-				_layerCellWeightUpdateKernel.setArg(6, _layerDescs[l]._cellsInColumn);
-				_layerCellWeightUpdateKernel.setArg(7, layerSize);
-				_layerCellWeightUpdateKernel.setArg(8, lateralConnectionRadii);
-				_layerCellWeightUpdateKernel.setArg(9, layerSizeInv);
-				_layerCellWeightUpdateKernel.setArg(10, nextLayerSize);
-				_layerCellWeightUpdateKernel.setArg(11, cellConnectionAlpha);
+				_layerCellWeightUpdateKernel.setArg(0, _layers[l]._columnAttentionsPrev);
+				_layerCellWeightUpdateKernel.setArg(1, _layers[l]._columnStates);
+				_layerCellWeightUpdateKernel.setArg(2, _layers[l]._cellStatesPrev);
+				_layerCellWeightUpdateKernel.setArg(3, _layers[l + 1]._columnPredictionsPrev);
+				_layerCellWeightUpdateKernel.setArg(4, _layers[l]._cellWeightsPrev);
+				_layerCellWeightUpdateKernel.setArg(5, _layers[l]._columnPredictionsPrev);
+				_layerCellWeightUpdateKernel.setArg(6, _layers[l]._cellWeights);
+				_layerCellWeightUpdateKernel.setArg(7, _layerDescs[l]._cellsInColumn);
+				_layerCellWeightUpdateKernel.setArg(8, layerSize);
+				_layerCellWeightUpdateKernel.setArg(9, lateralConnectionRadii);
+				_layerCellWeightUpdateKernel.setArg(10, layerSizeInv);
+				_layerCellWeightUpdateKernel.setArg(11, nextLayerSize);
+				_layerCellWeightUpdateKernel.setArg(12, cellConnectionAlpha);
 
 				cs.getQueue().enqueueNDRangeKernel(_layerCellWeightUpdateKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 			}
@@ -815,20 +836,20 @@ void HTMRL::updateDutyCycles(sys::ComputeSystem &cs, float dutyCycleDecay) {
 		layerSizeInv._x = 1.0f / _layerDescs[l]._width;
 		layerSizeInv._y = 1.0f / _layerDescs[l]._height;
 
-		Int2 layerInhibitionRadius;
-		layerInhibitionRadius._x = _layerDescs[l]._inhibitionRadius;
-		layerInhibitionRadius._y = _layerDescs[l]._inhibitionRadius;
+		Int2 layerAttentionRadius;
+		layerAttentionRadius._x = _layerDescs[l]._attentionRadius;
+		layerAttentionRadius._y = _layerDescs[l]._attentionRadius;
 
-		Float2 layerInhibitionStep;
-		layerInhibitionStep._x = layerSizeInv._x * _layerDescs[l]._inhibitionRadius;
-		layerInhibitionStep._y = layerSizeInv._y * _layerDescs[l]._inhibitionRadius;
+		Float2 layerAttentionStep;
+		layerAttentionStep._x = layerSizeInv._x * _layerDescs[l]._attentionRadius;
+		layerAttentionStep._y = layerSizeInv._y * _layerDescs[l]._attentionRadius;
 
 		_layerColumnDutyCycleUpdateKernel.setArg(0, _layers[l]._columnDutyCyclesPrev);
 		_layerColumnDutyCycleUpdateKernel.setArg(1, _layers[l]._columnStates);
 		_layerColumnDutyCycleUpdateKernel.setArg(2, _layers[l]._columnDutyCycles);
 		_layerColumnDutyCycleUpdateKernel.setArg(3, _layers[l]._columnAttentions);
-		_layerColumnDutyCycleUpdateKernel.setArg(4, layerInhibitionRadius);
-		_layerColumnDutyCycleUpdateKernel.setArg(5, layerInhibitionStep);
+		_layerColumnDutyCycleUpdateKernel.setArg(4, layerAttentionRadius);
+		_layerColumnDutyCycleUpdateKernel.setArg(5, layerAttentionStep);
 		_layerColumnDutyCycleUpdateKernel.setArg(6, layerSize);
 		_layerColumnDutyCycleUpdateKernel.setArg(7, layerSizeInv);
 		_layerColumnDutyCycleUpdateKernel.setArg(8, dutyCycleDecay);
@@ -840,7 +861,7 @@ void HTMRL::updateDutyCycles(sys::ComputeSystem &cs, float dutyCycleDecay) {
 }
 
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float dutyCycleDecay, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator) {
-	/*stepBegin();
+	stepBegin();
 	
 	// Complete input
 	std::vector<float> maxQInput = _input;
@@ -883,7 +904,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	else
 		_exploratoryOutput[j] = output[j];
 
-	float newQ = reward + gamma * exploratoryQ;
+	float newQ = reward + gamma * maxQ;
 
 	float suboptimality = std::max<float>(0.0f, (_prevMaxQ - newQ) * tauInv);
 
@@ -898,10 +919,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	//activate(_input, cs, seed);
 
-	retrieveQErrors(cs, tdError);
 	updateQWeights(cs, tdError, cellQWeightEligibilityDecay, qBiasAlpha);
-
-	updateDutyCycles(cs, dutyCycleDecay);
 
 	if (tdError < 0.0f)
 		activate(maxQInput, cs, seed);
@@ -910,12 +928,12 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	activate(_input, cs, seed);
 
+	updateDutyCycles(cs, dutyCycleDecay);
+
 	_prevOutput = output;
 	_prevOutputExploratory = _exploratoryOutput;
 
-	cs.getQueue().finish();*/
-
-	stepBegin();
+	/*stepBegin();
 
 	// Get initial Q
 	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
@@ -923,11 +941,13 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	int seed = seedDist(generator);
 
+	std::vector<float> oldOutput = _exploratoryOutput;
+
 	_exploratoryOutput = _input;
 
 	for (int j = 0; j < _exploratoryOutput.size(); j++)
 	if (_actionMask[j])
-		_exploratoryOutput[j] = _prevOutput[j];
+		_exploratoryOutput[j] = oldOutput[j];
 
 	activate(_exploratoryOutput, cs, seed);
 	
@@ -983,7 +1003,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	float exploratoryQ = retrieveQ(cs);
 
-	float newQ = reward + gamma * maxQ;
+	float newQ = reward + gamma * exploratoryQ;
 
 	float suboptimality = std::max<float>(0.0f, (_prevMaxQ - newQ) * tauInv);
 
@@ -996,15 +1016,13 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	_prevMaxQ = maxQ;
 	_prevValue = exploratoryQ;
 
-	//activate(_input, cs, seed);
+	updateDutyCycles(cs, dutyCycleDecay);
 
 	updateQWeights(cs, tdError, cellQWeightEligibilityDecay, qBiasAlpha);
 
-	learnSpatialTemporal(cs, columnConnectionAlpha, cellConnectionAlpha, reconstructionAlpha, true, true, true);
+	learnSpatialTemporal(cs, columnConnectionAlpha, cellConnectionAlpha, reconstructionAlpha, true, tdError > 0.0f, true);
 
-	updateDutyCycles(cs, dutyCycleDecay);
-
-	getReconstructedPrediction(_prevOutput, cs);
+	getReconstructedPrediction(_prevOutput, cs);*/
 }
 
 void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<sf::Image>> &images, unsigned long seed) const {
@@ -1046,7 +1064,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 	}
 	
 	for (int l = 0; l < _layers.size(); l++) {
-		std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn);
+		std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height);
 
 		cl::size_t<3> origin;
 		origin[0] = 0;
@@ -1056,9 +1074,9 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		cl::size_t<3> region;
 		region[0] = _layerDescs[l]._width;
 		region[1] = _layerDescs[l]._height;
-		region[2] = _layerDescs[l]._cellsInColumn;
+		region[2] = 1;
 
-		cs.getQueue().enqueueReadImage(_layers[l]._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cs.getQueue().enqueueReadImage(_layers[l]._columnPredictions, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
@@ -1066,23 +1084,21 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		c.b = uniformDist(generator) * 255.0f;
 
 		// Convert to colors
-		for (int ci = 0; ci < _layerDescs[l]._cellsInColumn; ci++) {
-			std::shared_ptr<sf::Image> image = std::make_shared<sf::Image>();
+		std::shared_ptr<sf::Image> image = std::make_shared<sf::Image>();
 
-			image->create(maxWidth, maxHeight, sf::Color::Transparent);
+		image->create(maxWidth, maxHeight, sf::Color::Transparent);
 
-			for (int x = 0; x < _layerDescs[l]._width; x++)
-			for (int y = 0; y < _layerDescs[l]._height; y++) {
-				sf::Color color;
+		for (int x = 0; x < _layerDescs[l]._width; x++)
+		for (int y = 0; y < _layerDescs[l]._height; y++) {
+			sf::Color color;
 
-				color = c;
+			color = c;
 
-				color.a = state[x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width * _layerDescs[l]._height] * (255.0f - 3.0f) + 3;
+			color.a = state[x + y * _layerDescs[l]._width] * (255.0f - 3.0f) + 3;
 
-				image->setPixel(x - _layerDescs[l]._width / 2 + maxWidth / 2, y - _layerDescs[l]._height / 2 + maxHeight / 2, color);
-			}
-
-			images.push_back(image);
+			image->setPixel(x - _layerDescs[l]._width / 2 + maxWidth / 2, y - _layerDescs[l]._height / 2 + maxHeight / 2, color);
 		}
+
+		images.push_back(image);
 	}
 }

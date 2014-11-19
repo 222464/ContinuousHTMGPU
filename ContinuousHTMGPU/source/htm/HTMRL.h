@@ -20,13 +20,14 @@ namespace htm {
 			int _receptiveFieldRadius;
 			int _lateralConnectionRadius;
 			int _inhibitionRadius;
+			int _attentionRadius;
 
 			int _cellsInColumn;
 
 			float _qInfluenceMultiplier;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _lateralConnectionRadius(4), _inhibitionRadius(4), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
+				: _width(16), _height(16), _receptiveFieldRadius(4), _lateralConnectionRadius(4), _inhibitionRadius(4), _attentionRadius(6), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
 			{}
 		};
 	private:
@@ -39,6 +40,7 @@ namespace htm {
 			cl::Image2D _columnDutyCyclesPrev;
 			cl::Image2D _columnDutyCycles;
 
+			cl::Image2D _columnAttentionsPrev;
 			cl::Image2D _columnAttentions;
 
 			cl::Image2D _columnStatesPrev;
