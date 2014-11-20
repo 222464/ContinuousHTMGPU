@@ -83,7 +83,6 @@ namespace htm {
 		cl::Kernel _layerUpdateQWeightsKernel;
 
 		cl::Kernel _reconstructInputKernel;
-		cl::Kernel _updateReconstructionKernel;
 
 		std::vector<float> _input;
 
@@ -103,8 +102,6 @@ namespace htm {
 		cl::Image2D _maxBufferPing;
 		cl::Image2D _maxBufferPong;
 
-		cl::Image3D _reconstructionWeightsPrev;
-		cl::Image3D _reconstructionWeights;
 		cl::Image2D _reconstruction;
 
 		int _reconstructionReceptiveRadius;
