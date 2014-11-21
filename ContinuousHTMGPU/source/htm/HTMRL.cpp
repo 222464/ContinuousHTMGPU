@@ -382,12 +382,14 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, unsigned
 
 		// Activation
 		_layerColumnActivateKernel.setArg(0, *pPrevColumnStates);
-		_layerColumnActivateKernel.setArg(1, _layers[l]._columnWeightsPrev);
-		_layerColumnActivateKernel.setArg(2, _layers[l]._columnActivations);
-		_layerColumnActivateKernel.setArg(3, layerSizeInv);
-		_layerColumnActivateKernel.setArg(4, inputReceptiveFieldRadius);
-		_layerColumnActivateKernel.setArg(5, inputReceptiveFieldStep);
-		_layerColumnActivateKernel.setArg(6, inputSize);
+		_layerColumnActivateKernel.setArg(1, _layers[l]._columnDutyCyclesPrev);
+		_layerColumnActivateKernel.setArg(2, _layers[l]._columnWeightsPrev);
+		_layerColumnActivateKernel.setArg(3, _layers[l]._columnActivations);
+		_layerColumnActivateKernel.setArg(4, layerSizeInv);
+		_layerColumnActivateKernel.setArg(5, inputReceptiveFieldRadius);
+		_layerColumnActivateKernel.setArg(6, inputReceptiveFieldStep);
+		_layerColumnActivateKernel.setArg(7, inputSize);
+		_layerColumnActivateKernel.setArg(8, seed);
 
 		cs.getQueue().enqueueNDRangeKernel(_layerColumnActivateKernel, cl::NullRange, cl::NDRange(_layerDescs[l]._width, _layerDescs[l]._height));
 
@@ -711,6 +713,10 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 	sdrReceptiveFieldRadii._x = _layerDescs.front()._receptiveFieldRadius;
 	sdrReceptiveFieldRadii._y = _layerDescs.front()._receptiveFieldRadius;
 
+	Float2 inputOverSdr;
+	inputOverSdr._x = static_cast<float>(_inputWidth) / _layerDescs.front()._width;
+	inputOverSdr._y = static_cast<float>(_inputHeight) / _layerDescs.front()._height;
+
 	_reconstructInputKernel.setArg(0, _inputImage);
 	_reconstructInputKernel.setArg(1, _layers.front()._columnStates);
 	_reconstructInputKernel.setArg(2, _layers.front()._columnWeightsPrev);
@@ -720,6 +726,7 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 	_reconstructInputKernel.setArg(6, inputSizeInv);
 	_reconstructInputKernel.setArg(7, layerSize);
 	_reconstructInputKernel.setArg(8, layerSizeInv);
+	_reconstructInputKernel.setArg(9, inputOverSdr);
 
 	cs.getQueue().enqueueNDRangeKernel(_reconstructInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
 
@@ -964,6 +971,45 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 	
 	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
 
+	/*{
+		std::vector<float> state(_layerDescs.front()._width * _layerDescs.front()._height);
+
+		cl::size_t<3> origin;
+		origin[0] = 0;
+		origin[1] = 0;
+		origin[2] = 0;
+
+		cl::size_t<3> region;
+		region[0] = _layerDescs.front()._width;
+		region[1] = _layerDescs.front()._height;
+		region[2] = 1;
+
+		cs.getQueue().enqueueReadImage(_layers.front()._columnStates, CL_TRUE, origin, region, 0, 0, &state[0]);
+
+		sf::Color c;
+		c.r = uniformDist(generator) * 255.0f;
+		c.g = uniformDist(generator) * 255.0f;
+		c.b = uniformDist(generator) * 255.0f;
+
+		// Convert to colors
+		std::shared_ptr<sf::Image> image = std::make_shared<sf::Image>();
+
+		image->create(maxWidth, maxHeight, sf::Color::Transparent);
+
+		for (int x = 0; x < _inputWidth; x++)
+		for (int y = 0; y < _inputHeight; y++) {
+			sf::Color color;
+
+			color = c;
+
+			color.a = std::min<float>(1.0f, std::max<float>(0.0f, state[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
+
+			image->setPixel(x - _inputWidth / 2 + maxWidth / 2, y - _inputHeight / 2 + maxHeight / 2, color);
+		}
+
+		images.push_back(image);
+	}*/
+
 	{
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
@@ -981,7 +1027,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 
 			color = c;
 
-			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _exploratoryOutput[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
+			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _prevOutput[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
 
 			image->setPixel(x - _inputWidth / 2 + maxWidth / 2, y - _inputHeight / 2 + maxHeight / 2, color);
 		}
@@ -989,7 +1035,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		images.push_back(image);
 	}
 	
-	/*for (int l = 0; l < _layers.size(); l++) {
+	for (int l = 0; l < _layers.size(); l++) {
 		std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height);
 
 		cl::size_t<3> origin;
@@ -1002,7 +1048,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		region[1] = _layerDescs[l]._height;
 		region[2] = 1;
 
-		cs.getQueue().enqueueReadImage(_layers[l]._columnPredictions, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cs.getQueue().enqueueReadImage(_layers[l]._columnStates, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
@@ -1026,5 +1072,5 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		}
 
 		images.push_back(image);
-	}*/
+	}
 }

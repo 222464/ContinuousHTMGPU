@@ -27,7 +27,7 @@ namespace htm {
 			float _qInfluenceMultiplier;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _lateralConnectionRadius(4), _inhibitionRadius(4), _attentionRadius(6), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
+				: _width(16), _height(16), _receptiveFieldRadius(2), _lateralConnectionRadius(4), _inhibitionRadius(6), _attentionRadius(6), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
 			{}
 		};
 	private:

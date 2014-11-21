@@ -18,21 +18,22 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 50.0f;
+constant float activationIntensity = 20.0f;
 constant float columnIntensity = 4.0f;
 constant float attentionIntensity = 6.0f;
 constant float cellStateIntensity = 4.0f;
 constant float cellPredictionIntensity = 4.0f;
-constant float minActivation = 0.00001f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
-constant float localActivity = 6.0f;
-constant float localAttention = 1.0f;
+constant float localActivity = 12.0f;
+constant float localAttention = 2.0f;
 constant float minDutyCycleRatio = 0.02f;
-constant float minDutyCycle = 0.02f;
-constant float boostFactor = 20.0f;
+constant float minDutyCycle = 0.001f;
+constant float boostFactor = 40.0f;
 constant float uniquenessPower = 4.0f;
-constant float reconstructionSensitivity = 10.0f;
+constant float columnEffectiveness = 1.0f;
+constant float randomFireChance = 0.01f;
+constant float randomFireStrength = 1.0f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -50,7 +51,7 @@ float sigmoid(float x) {
 }
 
 float boostFunction(float active, float minimum) {
-	return fmax(0.0f, minimum - active) * boostFactor;
+	return fmax(0.0f, fmax(minDutyCycle, minimum) - active) * boostFactor;
 }
 
 void kernel initializePartOne(write_only image2d_t columnActivations, write_only image2d_t columnDutyCycles, write_only image2d_t columnStates, write_only image3d_t columnWeights,
@@ -63,7 +64,7 @@ void kernel initializePartOne(write_only image2d_t columnActivations, write_only
 	write_imagef(columnActivations, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 	write_imagef(columnStates, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 
-	write_imagef(columnDutyCycles, columnPosition, (float4)(minDutyCycle, 0.0f, 0.0f, 0.0f));
+	write_imagef(columnDutyCycles, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 	
 	float columnQUsage = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
 	
@@ -103,18 +104,21 @@ void kernel initializePartTwo(write_only image3d_t cellStates, write_only image3
 	}
 }
 
-void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only image3d_t columnWeightsPrev, write_only image2d_t columnActivations, float2 layerSizeInv, int2 inputReceptiveFieldRadius, float2 inputReceptiveFieldStep, int2 inputSize) {
+void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only image2d_t columnDutyCyclesPrev, read_only image3d_t columnWeightsPrev, write_only image2d_t columnActivations, float2 layerSizeInv, int2 inputReceptiveFieldRadius, float2 inputReceptiveFieldStep, int2 inputSize, uint2 seed) {
+	uint2 seedValue = seed + (uint2)(get_global_id(0), get_global_id(1)) * 20;
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 inputCenterPositionNormalized = (float2)(columnPosition.x * layerSizeInv.x, columnPosition.y * layerSizeInv.y);
 
 	float sum = 0.0f;
-	
+
 	//int weightIndex = 0;
+	
+	float2 thisDutyCycle = read_imagef(columnDutyCyclesPrev, columnPosition).xy;
 	
 	for (int dx = -inputReceptiveFieldRadius.x; dx <= inputReceptiveFieldRadius.x; dx++)
 	for (int dy = -inputReceptiveFieldRadius.y; dy <= inputReceptiveFieldRadius.y; dy++) {
 		float2 inputPositionNormalized = inputCenterPositionNormalized + (float2)(dx * inputReceptiveFieldStep.x, dy * inputReceptiveFieldStep.y);
-		int2 inputPosition = (int2)(inputPositionNormalized.x * inputSize.x, inputPositionNormalized.y * inputSize.y);
+		int2 inputPosition = (int2)(inputPositionNormalized.x * (float)(inputSize.x), inputPositionNormalized.y * (float)(inputSize.y));
 		
 		if (inputPosition.x >= 0 && inputPosition.x < inputSize.x && inputPosition.y >= 0 && inputPosition.y < inputSize.y) {
 			int weightIndex = (dy + inputReceptiveFieldRadius.y) + (dx + inputReceptiveFieldRadius.x) * (2 * inputReceptiveFieldRadius.y + 1);
@@ -130,7 +134,7 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 		//weightIndex++;
 	}
 
-	float activation = exp(-sum * activationIntensity);
+	float activation = fmin(1.0f, exp(-sum * activationIntensity) + (randFloat(&seedValue) < (randomFireChance * thisDutyCycle.y) ? randomFireStrength : 0.0f));
 	
 	write_imagef(columnActivations, columnPosition, (float4)(activation, activation, activation, activation));
 }
@@ -141,6 +145,8 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, read_only 
 	
 	float thisActivation = read_imagef(columnActivations, columnPosition).x;
 	
+	//float2 thisDutyCycle = read_imagef(columnDutyCyclesPrev, columnPosition).xy;
+	
 	float higherSum = 0.0f;
 	
 	for (int dx = -receptiveFieldRadius.x; dx <= receptiveFieldRadius.x; dx++)
@@ -150,14 +156,18 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, read_only 
 		if (layerPosition.x >= 0 && layerPosition.x < layerSize.x && layerPosition.y >= 0 && layerPosition.y < layerSize.y) {
 			float activation = read_imagef(columnActivations, layerPosition).x;
 			
-			if (activation > thisActivation)
+			//float dutyCycle = read_imagef(columnDutyCyclesPrev, layerPosition).x;
+			
+			//float relativeDutyCycle = fmax(0.0f, dutyCycle - thisDutyCycle.x);
+			
+			//float effectiveActivation = activation * exp(-relativeDutyCycle * columnEffectiveness);
+			
+			if (activation >= thisActivation)
 				higherSum++;
 		}
 	}
 	
-	float boost = read_imagef(columnDutyCyclesPrev, columnPosition).y;
-	
-	float inhibitedResult = fmin(1.0f, boost + sigmoid((localActivity - higherSum) * columnIntensity) * thisActivation);
+	float inhibitedResult = sigmoid((localActivity - higherSum) * columnIntensity) * thisActivation;
 	
 	write_imagef(columnStates, columnPosition, (float4)(inhibitedResult, inhibitedResult, inhibitedResult, inhibitedResult));
 }
@@ -194,6 +204,7 @@ void kernel layerColumnDutyCycleUpdate(read_only image2d_t columnDutyCyclesPrev,
 	
 	float lowerDutyCycle = maxNeighborhoodDutyCycle * minDutyCycleRatio;
 	
+	//float newColumnDutyCycle = (1.0f - dutyCycleDecay) * (1.0f - thisColumnState) * thisColumnDutyCyclePrev + thisColumnState;
 	float newColumnDutyCycle = (1.0f - dutyCycleDecay) * thisColumnDutyCyclePrev + dutyCycleDecay * thisColumnState;
 	
 	float boost = boostFunction(newColumnDutyCycle, lowerDutyCycle);
@@ -218,8 +229,8 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 	
 	for (int dx = -inputReceptiveFieldRadius.x; dx <= inputReceptiveFieldRadius.x; dx++)
 	for (int dy = -inputReceptiveFieldRadius.y; dy <= inputReceptiveFieldRadius.y; dy++) {
-		float2 inputPositionNormalized = inputCenterPositionNormalized + (float2)(dx * inputReceptiveFieldStep.x, dy * inputReceptiveFieldStep.y);
-		int2 inputPosition = (int2)(inputPositionNormalized.x * inputSize.x, inputPositionNormalized.y * inputSize.y);
+		float2 inputPositionNormalized = (float2)(inputCenterPositionNormalized.x + dx * inputReceptiveFieldStep.x, inputCenterPositionNormalized.y + dy * inputReceptiveFieldStep.y);
+		int2 inputPosition = (int2)(inputPositionNormalized.x * (float)(inputSize.x), inputPositionNormalized.y * (float)(inputSize.y));
 		
 		if (inputPosition.x >= 0 && inputPosition.x < inputSize.x && inputPosition.y >= 0 && inputPosition.y < inputSize.y) {
 			float inputState = read_imagef(columnStatesInput, inputPosition).x;
@@ -308,7 +319,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnAttentionsPrev, read
 				
 				// Additional context from next layer
 				float2 normalizedConnectionCoords = (float2)(connectionCoords.x * layerSizeInv.x, connectionCoords.y * layerSizeInv.y);
-				int2 connectionCoordsNext = (int2)(normalizedConnectionCoords.x * nextLayerSize.x, normalizedConnectionCoords.y * nextLayerSize.y);
+				int2 connectionCoordsNext = (int2)(normalizedConnectionCoords.x * (float)(nextLayerSize.x), normalizedConnectionCoords.y * (float)(nextLayerSize.y));
 		
 				float nextContextPrev = read_imagef(nextLayerContextPrev, connectionCoordsNext).x;
 				
@@ -414,7 +425,7 @@ void kernel layerCellPredict(read_only image2d_t columnAttentions, read_only ima
 				float cellWeight = read_imagef(cellWeights, weightPosition).x;
 				
 				float2 normalizedConnectionCoords = (float2)(connectionCoords.x * layerSizeInv.x, connectionCoords.y * layerSizeInv.y);
-				int2 connectionCoordsNext = (int2)(normalizedConnectionCoords.x * nextLayerSize.x, normalizedConnectionCoords.y * nextLayerSize.y);
+				int2 connectionCoordsNext = (int2)(normalizedConnectionCoords.x * (float)(nextLayerSize.x), normalizedConnectionCoords.y * (float)(nextLayerSize.y));
 		
 				float nextContext = read_imagef(nextLayerContext, connectionCoordsNext).x;
 				
@@ -536,7 +547,7 @@ void kernel layerUpdateQWeights(read_only image2d_t columnAttentions, read_only 
 	}
 }
 
-void kernel reconstructInput(read_only image2d_t inputs, read_only image2d_t sdr, read_only image3d_t columnWeights, write_only image2d_t reconstruction, int2 reconstructionReceptiveFieldRadius, int2 sdrReceptiveFieldRadius, float2 inputSizeInv, int2 sdrSize, float2 sdrSizeInv) {
+void kernel reconstructInput(read_only image2d_t inputs, read_only image2d_t sdr, read_only image3d_t columnWeights, write_only image2d_t reconstruction, int2 reconstructionReceptiveFieldRadius, int2 sdrReceptiveFieldRadius, float2 inputSizeInv, int2 sdrSize, float2 sdrSizeInv, float2 inputOverSdr) {
 	int2 inputPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 inputPositionNormalized = (float2)(inputPosition.x * inputSizeInv.x, inputPosition.y * inputSizeInv.y);
 	
@@ -548,12 +559,15 @@ void kernel reconstructInput(read_only image2d_t inputs, read_only image2d_t sdr
 	for (int dx = -reconstructionReceptiveFieldRadius.x; dx <= reconstructionReceptiveFieldRadius.x; dx++)
 	for (int dy = -reconstructionReceptiveFieldRadius.y; dy <= reconstructionReceptiveFieldRadius.y; dy++) {
 		float2 sdrPositionNormalized = (float2)(inputPositionNormalized.x + dx * sdrSizeInv.x, inputPositionNormalized.y + dy * sdrSizeInv.y);
-		int2 sdrPosition = (int2)(sdrPositionNormalized.x * sdrSize.x, sdrPositionNormalized.y * sdrSize.y);
+		int2 sdrPosition = (int2)(sdrPositionNormalized.x * (float)(sdrSize.x), sdrPositionNormalized.y * (float)(sdrSize.y));
+		
+		int scaledDx = (float)(dx) * inputOverSdr.x;
+		int scaledDy = (float)(dy) * inputOverSdr.y;
 		
 		if (sdrPosition.x >= 0 && sdrPosition.x < sdrSize.x && sdrPosition.y >= 0 && sdrPosition.y < sdrSize.y) {
 			float source = read_imagef(sdr, sdrPosition).x;
 			
-			int weightIndex = (sdrReceptiveFieldRadius.y - dy) + (sdrReceptiveFieldRadius.x - dx) * (sdrReceptiveFieldRadius.y * 2 + 1);
+			int weightIndex = (sdrReceptiveFieldRadius.y - scaledDy) + (sdrReceptiveFieldRadius.x - scaledDx) * (sdrReceptiveFieldRadius.y * 2 + 1);
 
 			float weight = read_imagef(columnWeights, (int4)(sdrPosition.x, sdrPosition.y, weightIndex, 0)).x;
 
