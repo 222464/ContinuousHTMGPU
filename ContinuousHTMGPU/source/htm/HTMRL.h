@@ -38,10 +38,10 @@ namespace htm {
 			cl::Image2D _columnSensitivitiesPrev;
 			cl::Image2D _columnSensitivities;
 
-			cl::Image2D _columnActivations;
+			cl::Image2D _columnDutyCyclesPrev;
+			cl::Image2D _columnDutyCycles;
 
-			cl::Image2D _columnAttentionsPrev;
-			cl::Image2D _columnAttentions;
+			cl::Image2D _columnActivations;
 
 			cl::Image2D _columnStatesPrev;
 			cl::Image2D _columnStates;
