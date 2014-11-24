@@ -136,22 +136,19 @@ int main() {
 
 	std::vector<htm::HTMRL::LayerDesc> layerDescs(3);
 
-	layerDescs[0]._width = 64;
-	layerDescs[0]._height = 64;
+	layerDescs[0]._width = 128;
+	layerDescs[0]._height = 128;
 	layerDescs[0]._inhibitionRadius = 4;
-	layerDescs[0]._attentionRadius = 4;
 	layerDescs[0]._qInfluenceMultiplier = 0.444f;
 
-	layerDescs[1]._width = 44;
-	layerDescs[1]._height = 44;
+	layerDescs[1]._width = 88;
+	layerDescs[1]._height = 88;
 	layerDescs[1]._inhibitionRadius = 4;
-	layerDescs[1]._attentionRadius = 4;
 	layerDescs[1]._qInfluenceMultiplier = 0.666f;
 
-	layerDescs[2]._width = 32;
-	layerDescs[2]._height = 32;
+	layerDescs[2]._width = 64;
+	layerDescs[2]._height = 64;
 	layerDescs[2]._inhibitionRadius = 4;
-	layerDescs[2]._attentionRadius = 4;
 	layerDescs[2]._qInfluenceMultiplier = 1.0f;
 
 	std::vector<bool> actionMask(64 * 64, false);
@@ -161,7 +158,7 @@ int main() {
 		actionMask[x + y * 64] = true;
 	}
 
-	agent.createRandom(cs, program, 64, 64, layerDescs, actionMask, -0.2f, 0.2f, 0.01f, 0.1f, generator);
+	agent.createRandom(cs, program, 64, 64, layerDescs, actionMask, -0.2f, 0.2f, generator);
 
 	sf::RenderTexture htmRT;
 	htmRT.create(1024, 1024, false);
@@ -226,7 +223,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.3f, 0.3f, 0.3f, 0.02f, 0.0f, 4, 0.05f, 0.02f, 0.78f, 0.4f, 0.0001f, 0.992f, 0.0f, 0.05f, 0.05f, generator);
+		agent.step(cs, reward, 0.3f, 0.3f, 0.3f, 0.02f, 0.01f, 0.01f, 0.0f, 4, 0.05f, 0.02f, 0.78f, 0.4f, 0.0001f, 0.992f, 0.0f, 0.05f, 0.05f, generator);
 
 		/*float output = 0.0f;
 

@@ -20,14 +20,13 @@ namespace htm {
 			int _receptiveFieldRadius;
 			int _lateralConnectionRadius;
 			int _inhibitionRadius;
-			int _attentionRadius;
 
 			int _cellsInColumn;
 
 			float _qInfluenceMultiplier;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(2), _lateralConnectionRadius(4), _inhibitionRadius(6), _attentionRadius(6), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
+				: _width(16), _height(16), _receptiveFieldRadius(3), _lateralConnectionRadius(4), _inhibitionRadius(6), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
 			{}
 		};
 	private:
@@ -35,11 +34,11 @@ namespace htm {
 			cl::Image3D _columnWeightsPrev;
 			cl::Image3D _columnWeights;
 
-			cl::Image2D _columnSensitivitiesPrev;
-			cl::Image2D _columnSensitivities;
-
 			cl::Image2D _columnDutyCyclesPrev;
 			cl::Image2D _columnDutyCycles;
+
+			cl::Image2D _columnActivationVariancesPrev;
+			cl::Image2D _columnActivationVariances;
 
 			cl::Image2D _columnActivations;
 
@@ -71,6 +70,7 @@ namespace htm {
 
 		cl::Kernel _layerColumnActivateKernel;
 		cl::Kernel _layerColumnInhibitKernel;
+		cl::Kernel _layerColumnDutyCycleUpdateKernel;
 		cl::Kernel _layerCellActivateKernel;
 		cl::Kernel _layerCellWeightUpdateKernel;
 		cl::Kernel _layerCellWeightUpdateLastKernel;
@@ -107,7 +107,7 @@ namespace htm {
 
 		void stepBegin();
 
-		void activate(std::vector<float> &input, sys::ComputeSystem &cs, unsigned long seed);
+		void activate(std::vector<float> &input, sys::ComputeSystem &cs, float activationDutyCycleDecay, float stateDutyCycleDecay, unsigned long seed);
 
 		float retrieveQ(sys::ComputeSystem &cs);
 
@@ -118,9 +118,9 @@ namespace htm {
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
 
 	public:
-		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, float minInitSensitivity, float maxInitSensitivity, std::mt19937 &generator);
+		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
