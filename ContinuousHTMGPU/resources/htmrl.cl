@@ -24,12 +24,14 @@ constant float cellStateIntensity = 4.0f;
 constant float cellPredictionIntensity = 4.0f;
 constant float minLearningThreshold = 0.05f;
 constant float predictionRangeExtension = 0.1f;
-constant float localActivity = 2.0f;
-constant float dutyCycleDecay = 0.01f;
+constant float localActivity = 4.0f;
 constant float uniquenessPower = 4.0f;
 constant float subActivation = 0.2f;
-constant float minOverlapForActivation = 0.5f;
+constant float minOverlapForActivation = 0.1f;
+constant float subOverlapIncrement = 0.00001f;
 constant float boostDutyCycleRatio = 0.01f;
+constant float boostMultiplier = 100.0f;
+constant float weightCurve = 6.0f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -47,7 +49,7 @@ float sigmoid(float x) {
 }
 
 float boostFunction(float active, float minimum) {
-	return (1.0f - minimum) + fmax(0.0f, -(minimum - active));
+	return 1.0f + fmax(0.0f, (minimum - active)) * boostMultiplier;
 }
 
 void kernel initializePartOne(write_only image2d_t columnActivations, write_only image2d_t columnStates, write_only image3d_t columnWeights, write_only image2d_t columnDutyCycles,
@@ -59,14 +61,14 @@ void kernel initializePartOne(write_only image2d_t columnActivations, write_only
 
 	write_imagef(columnActivations, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 	write_imagef(columnStates, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
-	write_imagef(columnDutyCycles, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
+	write_imagef(columnDutyCycles, columnPosition, (float4)(minOverlapForActivation, 0.0f, 0.0f, 0.0f));
 
 	float columnQUsage = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
 	
 	for (int wi = 0; wi < receptiveFieldSize; wi++) {
 		int4 weightPosition = (int4)(columnPosition.x, columnPosition.y, wi, 0);
 	
-		float columnConnectionWeight = randFloat(&seedValue) * 0.5f;
+		float columnConnectionWeight = randFloat(&seedValue) - 1.5f;
 
 		write_imagef(columnWeights, weightPosition, (float4)(columnConnectionWeight, 0.0f, 0.0f, 0.0f));
 	}
@@ -117,7 +119,7 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 			float weight = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 			float inputState = read_imagef(columnStatesInput, inputPosition).x;
 				
-			float overlap = weight * inputState;
+			float overlap = sigmoid(weight * weightCurve) * inputState;
 				
 			sum += overlap;
 		}
@@ -206,6 +208,8 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 	
 	float2 dutyCyclePrev = read_imagef(columnDutyCyclesPrev, columnPosition).xy;
 	
+	float globalIncrement = fmax(0.0f, minOverlapForActivation - dutyCyclePrev.x) * subOverlapIncrement;
+	
 	float learnScalar = fmax(0.0f, thisState - minLearningThreshold);
 
 	// Adjust weights by their source activations and error
@@ -223,9 +227,11 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 		
 			float prevWeight = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 				
-			float change = connectionAlpha * learnScalar * (inputState - learnScalar * prevWeight);
+			float change = connectionAlpha * learnScalar * (inputState - learnScalar * sigmoid(prevWeight * weightCurve));
 				
-			float newWeight = fmin(1.0f, fmax(0.0f, prevWeight + change));
+			change += globalIncrement;
+				
+			float newWeight = prevWeight + change;//fmin(1.0f, fmax(0.0f, prevWeight + change));
 				
 			write_imagef(columnWeights, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0), (float4)(newWeight, newWeight, newWeight, newWeight));
 		}
@@ -563,7 +569,7 @@ void kernel reconstructInput(read_only image2d_t inputs, read_only image2d_t sdr
 
 			float weight = read_imagef(columnWeights, (int4)(sdrPosition.x, sdrPosition.y, weightIndex, 0)).x;
 
-			sum += source * weight;
+			sum += source * sigmoid(weight * weightCurve);
 			
 			total += source;
 		}
@@ -571,7 +577,7 @@ void kernel reconstructInput(read_only image2d_t inputs, read_only image2d_t sdr
 	
 	float output;
 
-	if (sum > minOverlapForActivation)
+	if (total != 0.0f)
 		output = sum / total;
 	else
 		output = 0.0f;

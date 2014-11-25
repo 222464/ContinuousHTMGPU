@@ -714,7 +714,7 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 	inputOverSdr._y = static_cast<float>(_inputHeight) / _layerDescs.front()._height;
 
 	_reconstructInputKernel.setArg(0, _inputImage);
-	_reconstructInputKernel.setArg(1, _layers.front()._columnStates);
+	_reconstructInputKernel.setArg(1, _layers.front()._columnPredictions);
 	_reconstructInputKernel.setArg(2, _layers.front()._columnWeightsPrev);
 	_reconstructInputKernel.setArg(3, _reconstruction);
 	_reconstructInputKernel.setArg(4, reconstructionReceptiveFieldRadii);
@@ -748,7 +748,7 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 }
 
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator) {
-	/*stepBegin();
+	stepBegin();
 	
 	// Complete input
 	std::vector<float> maxQInput = _input;
@@ -757,7 +757,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	if (_actionMask[j]) {
 		_input[j] = _prevOutputExploratory[j];
 
-		maxQInput[j] = _prevOutput[j];
+		maxQInput[j] = std::min<float>(1.0f, std::max<float>(0.0f, _prevOutput[j]));
 	}
 
 	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
@@ -766,11 +766,11 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	int seed = seedDist(generator);
 	int learnSeed = seedDist(generator);
 
-	activate(maxQInput, cs, seed);
+	activate(maxQInput, cs, activationDutyCycleDecay, stateDutyCycleDecay, seed);
 
 	float maxQ = retrieveQ(cs);
 
-	activate(_input, cs, seed);
+	activate(_input, cs, activationDutyCycleDecay, stateDutyCycleDecay, seed);
 
 	float exploratoryQ = retrieveQ(cs);
 
@@ -785,14 +785,14 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	for (int j = 0; j < _input.size(); j++)
 	if (_actionMask[j]) {
 		if (uniformDist(generator) < outputBreakChance)
-			_exploratoryOutput[j] = uniformDist(generator) * 2.0f - 1.0f;
+			_exploratoryOutput[j] = uniformDist(generator);
 		else
-			_exploratoryOutput[j] = std::min<float>(1.0f, std::max<float>(-1.0f, output[j] + outputPerturbationDist(generator)));
+			_exploratoryOutput[j] = std::min<float>(1.0f, std::max<float>(0.0f, std::min<float>(1.0f, std::max<float>(0.0f, output[j])) + outputPerturbationDist(generator)));
 	}
 	else
-		_exploratoryOutput[j] = output[j];
+		_exploratoryOutput[j] = std::min<float>(1.0f, std::max<float>(0.0f, output[j]));
 
-	float newQ = reward + gamma * maxQ;
+	float newQ = reward + gamma * exploratoryQ;
 
 	float suboptimality = std::max<float>(0.0f, (_prevMaxQ - newQ) * tauInv);
 
@@ -809,17 +809,19 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	updateQWeights(cs, tdError, cellQWeightEligibilityDecay, qBiasAlpha);
 
-	if (tdError < 0.0f)
-		activate(maxQInput, cs, seed);
+	learnSpatialTemporal(cs, columnConnectionAlpha, cellConnectionAlpha, reconstructionAlpha, true, false, true, learnSeed);
 
-	learnSpatialTemporal(cs, columnConnectionAlpha, cellConnectionAlpha, reconstructionAlpha, true, true, true, learnSeed);
+	if (tdError < 0.0f)
+		activate(maxQInput, cs, activationDutyCycleDecay, stateDutyCycleDecay, seed);
+
+	learnSpatialTemporal(cs, columnConnectionAlpha, cellConnectionAlpha, reconstructionAlpha, false , true, false, learnSeed);
 
 	//activate(_input, cs, seed);
 
 	_prevOutput = output;
-	_prevOutputExploratory = _exploratoryOutput;*/
+	_prevOutputExploratory = _exploratoryOutput;
 
-	stepBegin();
+	/*stepBegin();
 
 	// Get initial Q
 	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
@@ -906,7 +908,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	learnSpatialTemporal(cs, columnConnectionAlpha, cellConnectionAlpha, reconstructionAlpha, true, tdError > 0.0f, true, seed);
 
-	getReconstructedPrediction(_prevOutput, cs);
+	getReconstructedPrediction(_prevOutput, cs);*/
 }
 
 void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<sf::Image>> &images, unsigned long seed) const {
