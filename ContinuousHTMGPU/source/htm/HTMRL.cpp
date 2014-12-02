@@ -1083,14 +1083,14 @@ void HTMRL::explorePrediction(sys::ComputeSystem &cs, float mutateChance, unsign
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float mutateChance, std::mt19937 &generator) {
 	stepBegin();
 	
-	std::vector<float> exploratoryInput = _input;
+	std::vector<float> maxQInput = _input;
 
 	// Complete input
 	for (int j = 0; j < _input.size(); j++)
 	if (_actionMask[j]) {
-		_input[j] = _prevOutput[j];
+		_input[j] = _prevOutputExploratory[j];
 
-		exploratoryInput[j] = _prevOutputExploratory[j];
+		maxQInput[j] = _prevOutput[j];
 	}
 
 	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
@@ -1100,11 +1100,11 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	int exploreSeed = seedDist(generator);
 	int learnSeed = seedDist(generator);
 
-	activate(exploratoryInput, cs, seed);
+	activate(_input, cs, seed);
 
 	float exploratoryQ = retrieveQ(cs);
 
-	activate(_input, cs, seed);
+	activate(maxQInput, cs, seed);
 
 	float maxQ = retrieveQ(cs);
 
@@ -1139,7 +1139,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	//learnSpatialTemporal(cs, columnConnectionAlpha, cellConnectionAlpha, true, false, learnSeed);
 
-	learnSpatialTemporal(cs, columnConnectionAlpha, cellConnectionAlpha, reward < 0.0f, learnSeed);
+	learnSpatialTemporal(cs, columnConnectionAlpha, cellConnectionAlpha, tdError > 0.0f, learnSeed);
 
 	//activate(_input, cs, seed);
 
