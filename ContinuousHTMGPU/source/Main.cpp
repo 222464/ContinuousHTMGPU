@@ -138,17 +138,17 @@ int main() {
 
 	layerDescs[0]._width = 64;
 	layerDescs[0]._height = 64;
-	layerDescs[0]._inhibitionRadius = 4;
+	layerDescs[0]._inhibitionRadius = 5;
 	layerDescs[0]._qInfluenceMultiplier = 0.444f;
 
 	layerDescs[1]._width = 44;
 	layerDescs[1]._height = 44;
-	layerDescs[1]._inhibitionRadius = 4;
+	layerDescs[1]._inhibitionRadius = 5;
 	layerDescs[1]._qInfluenceMultiplier = 0.666f;
 
 	layerDescs[2]._width = 32;
 	layerDescs[2]._height = 32;
-	layerDescs[2]._inhibitionRadius = 4;
+	layerDescs[2]._inhibitionRadius = 5;
 	layerDescs[2]._qInfluenceMultiplier = 1.0f;
 
 	std::vector<bool> actionMask(64 * 64, false);
@@ -209,7 +209,7 @@ int main() {
 
 		//reward = dFitness * 5.0f;
 
-		reward = fitness;
+		reward = dFitness;
 
 		if (totalTime == 0.0f)
 			avgReward = reward;
@@ -223,7 +223,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.5f, 0.5f, 0.5f, 0.02f, 0.01f, 0.01f, 0.0f, 4, 0.05f, 0.02f, 0.78f, 0.4f, 0.00005f, 0.992f, 0.0f, 0.05f, 0.05f, generator);
+		agent.step(cs, reward, 0.3f, 0.3f, 0.02f, 0.01f, 0.01f, 0.0f, 2, 0.1f, 0.02f, 0.78f, 0.4f, 0.005f, 0.992f, 0.0f, 0.05f, generator);
 
 		/*float output = 0.0f;
 
@@ -234,10 +234,9 @@ int main() {
 
 		output /= 32 * 64;*/
 
-		float output = agent.getOutput(34, 40) + agent.getOutput(35, 40) + agent.getOutput(36, 40) + agent.getOutput(37, 40) +
-			agent.getOutput(34, 41) + agent.getOutput(35, 41) + agent.getOutput(36, 41) + agent.getOutput(37, 41);
+		float output = agent.getOutput(34, 40);
 
-		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, (output * 2.0f - 1.0f) * 4.0f));
+		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, (output * 2.0f - 1.0f) * 1.0f));
 
 		//std::cout << dir << std::endl;
 

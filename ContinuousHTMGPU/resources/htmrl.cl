@@ -18,17 +18,17 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 1.0f;
+constant float activationIntensity = 4.0f;
 constant float columnIntensity = 4.0f;
 constant float cellStateIntensity = 4.0f;
 constant float cellPredictionIntensity = 4.0f;
-constant float minLearningThreshold = 0.05f;
+constant float minLearningThreshold = 0.1f;
 constant float predictionRangeExtension = 0.1f;
-constant float localActivity = 4.0f;
+constant float localActivity = 3.0f;
 constant float uniquenessPower = 4.0f;
 constant float subActivation = 0.2f;
 constant float minOverlapForActivation = 0.1f;
-constant float subOverlapIncrement = 0.00001f;
+constant float subOverlapIncrement = 0.0001f;
 constant float boostDutyCycleRatio = 0.01f;
 constant float boostMultiplier = 100.0f;
 constant float weightCurve = 6.0f;
@@ -52,7 +52,7 @@ float boostFunction(float active, float minimum) {
 	return 1.0f + fmax(0.0f, (minimum - active)) * boostMultiplier;
 }
 
-void kernel initializePartOne(write_only image2d_t columnActivations, write_only image2d_t columnStates, write_only image3d_t columnWeights, write_only image2d_t columnDutyCycles,
+void kernel initializePartOne(write_only image2d_t columnActivations, write_only image2d_t columnStates, write_only image2d_t columnStatesExploratory, write_only image3d_t columnWeights, write_only image2d_t columnDutyCycles,
 	int cellsInColumn, int receptiveFieldSize, int lateralConnectionsSize, uint2 seed, float minWeight, float maxWeight)
 {
 	uint2 seedValue = seed + (uint2)(get_global_id(0), get_global_id(1)) * 100;
@@ -61,6 +61,7 @@ void kernel initializePartOne(write_only image2d_t columnActivations, write_only
 
 	write_imagef(columnActivations, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 	write_imagef(columnStates, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
+	write_imagef(columnStatesExploratory, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 	write_imagef(columnDutyCycles, columnPosition, (float4)(minOverlapForActivation, 0.0f, 0.0f, 0.0f));
 
 	float columnQUsage = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
@@ -68,7 +69,7 @@ void kernel initializePartOne(write_only image2d_t columnActivations, write_only
 	for (int wi = 0; wi < receptiveFieldSize; wi++) {
 		int4 weightPosition = (int4)(columnPosition.x, columnPosition.y, wi, 0);
 	
-		float columnConnectionWeight = randFloat(&seedValue) - 1.5f;
+		float columnConnectionWeight = randFloat(&seedValue) * 0.1f;
 
 		write_imagef(columnWeights, weightPosition, (float4)(columnConnectionWeight, 0.0f, 0.0f, 0.0f));
 	}
@@ -119,7 +120,7 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 			float weight = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 			float inputState = read_imagef(columnStatesInput, inputPosition).x;
 				
-			float overlap = sigmoid(weight * weightCurve) * inputState;
+			float overlap = weight * inputState;
 				
 			sum += overlap;
 		}
@@ -140,29 +141,32 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only
 	
 	float thisActivation = read_imagef(columnActivations, columnPosition).x;
 	
-	float inhibitedResult;
+	float higherSum = 0.0f;
+		
+	for (int dx = -receptiveFieldRadius.x; dx <= receptiveFieldRadius.x; dx++)
+	for (int dy = -receptiveFieldRadius.y; dy <= receptiveFieldRadius.y; dy++) {
+		int2 layerPosition = columnPosition + (int2)(dx, dy);
 	
-	if (thisActivation > minOverlapForActivation) {
-		float higherSum = 0.0f;
-		
-		for (int dx = -receptiveFieldRadius.x; dx <= receptiveFieldRadius.x; dx++)
-		for (int dy = -receptiveFieldRadius.y; dy <= receptiveFieldRadius.y; dy++) {
-			int2 layerPosition = columnPosition + (int2)(dx, dy);
-		
-			if (layerPosition.x >= 0 && layerPosition.x < layerSize.x && layerPosition.y >= 0 && layerPosition.y < layerSize.y) {
-				float activation = read_imagef(columnActivations, layerPosition).x;
-				
-				if (activation >= thisActivation)
-					higherSum++;
-			}
+		if (layerPosition.x >= 0 && layerPosition.x < layerSize.x && layerPosition.y >= 0 && layerPosition.y < layerSize.y) {
+			float activation = read_imagef(columnActivations, layerPosition).x;
+			
+			if (activation >= thisActivation)
+				higherSum++;
 		}
-		
-		inhibitedResult = sigmoid((localActivity - higherSum) * columnIntensity);
 	}
-	else
-		inhibitedResult = 0.0f;
+	
+	float inhibitedResult = sigmoid((localActivity - higherSum) * columnIntensity) * fmin(1.0f, fmax(0.0f, thisActivation));
 	
 	write_imagef(columnStates, columnPosition, (float4)(inhibitedResult, inhibitedResult, inhibitedResult, inhibitedResult));
+}
+
+void kernel layerExplore(read_only image2d_t states, write_only image2d_t statesExploratory, float mutateChance, uint2 seed) {
+	uint2 seedValue = seed + (uint2)(get_global_id(0), get_global_id(1)) * 250;
+	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
+	
+	float output = randFloat(&seedValue) < mutateChance ? randFloat(&seedValue) : read_imagef(states, columnPosition).x;
+	
+	write_imagef(statesExploratory, columnPosition, (float4)(output, output, output, output));
 }
 
 void kernel layerColumnDutyCycleUpdate(read_only image2d_t columnActivations, read_only image2d_t columnStates, read_only image2d_t columnDutyCyclesPrev, write_only image2d_t columnDutyCycles,
@@ -208,7 +212,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 	
 	float2 dutyCyclePrev = read_imagef(columnDutyCyclesPrev, columnPosition).xy;
 	
-	float globalIncrement = fmax(0.0f, minOverlapForActivation - dutyCyclePrev.x) * subOverlapIncrement;
+	//float globalIncrement = fmax(0.0f, minOverlapForActivation - dutyCyclePrev.x) * subOverlapIncrement;
 	
 	float learnScalar = fmax(0.0f, thisState - minLearningThreshold);
 
@@ -227,9 +231,9 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 		
 			float prevWeight = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 				
-			float change = connectionAlpha * learnScalar * (inputState - learnScalar * sigmoid(prevWeight * weightCurve));
+			float change = connectionAlpha * learnScalar * (inputState - learnScalar * prevWeight);
 				
-			change += globalIncrement;
+			//change += globalIncrement;
 				
 			float newWeight = prevWeight + change;//fmin(1.0f, fmax(0.0f, prevWeight + change));
 				
@@ -502,9 +506,9 @@ void kernel layerRetrieveQ(read_only image2d_t columnStates, read_only image2d_t
 	
 	float stateDutyCycle = read_imagef(columnDutyCycles, columnPosition).y;
 	
-	//float uniqueness = pow(fabs(state - dutyCycle), uniquenessPower);
+	float uniqueness = pow(fabs(state - stateDutyCycle), uniquenessPower);
 	
-	float uniqueness = state - stateDutyCycle;
+	//float uniqueness = state - stateDutyCycle;
 	
 	float sum = 0.0f;
 	
@@ -526,9 +530,9 @@ void kernel layerUpdateQWeights(read_only image2d_t columnStates, read_only imag
 	
 	float stateDutyCycle = read_imagef(columnDutyCycles, columnPosition).y;
 	
-	//float uniqueness = pow(fabs(state - dutyCycle), uniquenessPower);
+	float uniqueness = pow(fabs(state - stateDutyCycle), uniquenessPower);
 	
-	float uniqueness = state - stateDutyCycle;
+	//float uniqueness = state - stateDutyCycle;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
@@ -569,7 +573,7 @@ void kernel reconstructInput(read_only image2d_t inputs, read_only image2d_t sdr
 
 			float weight = read_imagef(columnWeights, (int4)(sdrPosition.x, sdrPosition.y, weightIndex, 0)).x;
 
-			sum += source * sigmoid(weight * weightCurve);
+			sum += source * weight;
 			
 			total += source;
 		}
@@ -578,9 +582,11 @@ void kernel reconstructInput(read_only image2d_t inputs, read_only image2d_t sdr
 	float output;
 
 	if (total != 0.0f)
-		output = sum / total;
+		output = fmin(1.0f, fmax(0.0f, sum / total));
 	else
 		output = 0.0f;
+		
+	//float output = sum;
 	
 	write_imagef(reconstruction, inputPosition, (float4)(output, output, output, output));
 }

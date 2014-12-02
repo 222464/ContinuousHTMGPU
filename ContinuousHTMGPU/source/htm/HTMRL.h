@@ -37,13 +37,13 @@ namespace htm {
 			cl::Image2D _columnDutyCyclesPrev;
 			cl::Image2D _columnDutyCycles;
 
-			cl::Image2D _columnActivationVariancesPrev;
-			cl::Image2D _columnActivationVariances;
-
 			cl::Image2D _columnActivations;
 
 			cl::Image2D _columnStatesPrev;
 			cl::Image2D _columnStates;
+
+			cl::Image2D _columnPredictionsExploratoryPrev;
+			cl::Image2D _columnPredictionsExploratory;
 
 			cl::Image3D _cellWeightsPrev;
 			cl::Image3D _cellWeights;
@@ -70,6 +70,7 @@ namespace htm {
 
 		cl::Kernel _layerColumnActivateKernel;
 		cl::Kernel _layerColumnInhibitKernel;
+		cl::Kernel _layerExploreKernel;
 		cl::Kernel _layerColumnDutyCycleUpdateKernel;
 		cl::Kernel _layerCellActivateKernel;
 		cl::Kernel _layerCellWeightUpdateKernel;
@@ -87,6 +88,7 @@ namespace htm {
 
 		std::vector<bool> _actionMask;
 
+		std::vector<float> _output;
 		std::vector<float> _exploratoryOutput;
 		std::vector<float> _prevOutput;
 		std::vector<float> _prevOutputExploratory;
@@ -98,29 +100,41 @@ namespace htm {
 
 		cl::Image2D _inputImage;
 
-		cl::Image2D _maxBufferPing;
-		cl::Image2D _maxBufferPong;
-
 		cl::Image2D _reconstruction;
 
 		int _reconstructionReceptiveRadius;
 
 		void stepBegin();
 
-		void activate(std::vector<float> &input, sys::ComputeSystem &cs, float activationDutyCycleDecay, float stateDutyCycleDecay, unsigned long seed);
+		void activate(std::vector<float> &input, sys::ComputeSystem &cs, unsigned long seed);
 
 		float retrieveQ(sys::ComputeSystem &cs);
 
-		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha, bool learnSDR, bool learnPrediction, bool learnReconstruction, unsigned long seed);
+		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, bool learnExploratory, unsigned long seed);
 		
 		void updateQWeights(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay, float qBiasAlpha);
 
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
+		void getReconstructedExploratoryPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
+
+		void dutyCycleUpdate(sys::ComputeSystem &cs, float activationDutyCycleDecay, float stateDutyCycleDecay);
+
+		void explorePrediction(sys::ComputeSystem &cs, float mutateChance, unsigned long seed);
+
+		void initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, int inputWidth, int inputHeight, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, std::mt19937 &generator);
+		void activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
+		void predictLayer(sys::ComputeSystem &cs, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
+		void predictLayerLast(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
+		float retreiveLayerQ(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc);
+		void learnLayerSpatialTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float cellConnectionAlpha, bool learnExploratory, std::mt19937 &generator);
+		void learnLayerSpatialTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float cellConnectionAlpha, bool learnExploratory, std::mt19937 &generator);
+		void updateLayerQWeights(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, float tdError, float cellQWeightEligibilityDecay);
+		void dutyCycleLayerUpdate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, float activationDutyCycleDecay, float stateDutyCycleDecay);
 
 	public:
 		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float reconstructionAlpha, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float outputBreakChance, float outputPerturbationStdDev, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float mutateChance, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
@@ -143,7 +157,7 @@ namespace htm {
 		}
 
 		float getOutput(int i) const {
-			return _exploratoryOutput[i];
+			return _output[i];
 		}
 
 		float getOutput(int x, int y) const {
