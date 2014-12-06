@@ -29,8 +29,8 @@ constant float uniquenessPower = 4.0f;
 constant float subActivation = 0.2f;
 constant float minOverlapForActivation = 0.1f;
 constant float subOverlapIncrement = 0.0001f;
-constant float boostDutyCycleRatio = 0.01f;
-constant float boostMultiplier = 100.0f;
+constant float boostDutyCycleRatio = 0.02f;
+constant float boostMultiplier = 50.0f;
 constant float weightCurve = 6.0f;
 
 float randFloat(uint2* state) {
@@ -52,7 +52,7 @@ float boostFunction(float active, float minimum) {
 	return 1.0f + fmax(0.0f, (minimum - active)) * boostMultiplier;
 }
 
-void kernel initializePartOne(write_only image2d_t columnActivations, write_only image2d_t columnStates, write_only image2d_t columnStatesExploratory, write_only image3d_t columnWeights, write_only image2d_t columnDutyCycles,
+void kernel initializePartOne(write_only image2d_t columnActivations, write_only image2d_t columnStates, write_only image3d_t columnWeights, write_only image2d_t columnDutyCycles,
 	int cellsInColumn, int receptiveFieldSize, int lateralConnectionsSize, uint2 seed, float minWeight, float maxWeight)
 {
 	uint2 seedValue = seed + (uint2)(get_global_id(0), get_global_id(1)) * 100;
@@ -61,7 +61,6 @@ void kernel initializePartOne(write_only image2d_t columnActivations, write_only
 
 	write_imagef(columnActivations, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 	write_imagef(columnStates, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
-	write_imagef(columnStatesExploratory, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 	write_imagef(columnDutyCycles, columnPosition, (float4)(minOverlapForActivation, 0.0f, 0.0f, 0.0f));
 
 	float columnQUsage = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
