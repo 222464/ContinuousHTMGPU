@@ -209,7 +209,7 @@ int main() {
 
 		//reward = dFitness * 5.0f;
 
-		reward = dFitness;
+		reward = fitness;
 
 		if (totalTime == 0.0f)
 			avgReward = reward;
@@ -223,20 +223,20 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.3f, 0.3f, 0.02f, 0.01f, 0.01f, 0.0f, 2, 0.1f, 0.02f, 0.78f, 0.4f, 0.005f, 0.992f, 0.0f, 0.05f, 0.05f, generator);
+		agent.step(cs, reward, 0.04f, 0.04f, 0.02f, 0.02f, 0.01f, 0.01f, 0.5f, 0.0f, 2, 0.1f, 0.02f, 0.78f, 0.4f, 0.0001f, 0.992f, 0.0f, 0.05f, 0.05f, generator);
 
 		/*float output = 0.0f;
 
 		for (int x = 0; x < 64; x++)
 		for (int y = 32; y < 64; y++) {
-			output += agent.getOutput(x, y);
+			output += agent.getOutput(x, y) * 2.0f - 1.0f;
 		}
 
 		output /= 32 * 64;*/
 
-		float output = agent.getOutput(34, 40);
+		float output = (agent.getOutput(31, 40) * 2.0f - 1.0f + agent.getOutput(32, 40) * 2.0f - 1.0f + agent.getOutput(33, 40) * 2.0f - 1.0f + agent.getOutput(34, 40) * 2.0f - 1.0f) * 0.25f;
 
-		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, (output * 2.0f - 1.0f) * 1.0f));
+		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, (output * 2.0f)));
 
 		//std::cout << dir << std::endl;
 

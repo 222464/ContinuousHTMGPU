@@ -26,7 +26,7 @@ namespace htm {
 			float _qInfluenceMultiplier;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _lateralConnectionRadius(4), _inhibitionRadius(6), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
+				: _width(16), _height(16), _receptiveFieldRadius(6), _lateralConnectionRadius(4), _inhibitionRadius(6), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
 			{}
 		};
 	private:
@@ -67,7 +67,6 @@ namespace htm {
 
 		cl::Kernel _layerColumnActivateKernel;
 		cl::Kernel _layerColumnInhibitKernel;
-		cl::Kernel _layerExploreKernel;
 		cl::Kernel _layerColumnDutyCycleUpdateKernel;
 		cl::Kernel _layerCellActivateKernel;
 		cl::Kernel _layerCellWeightUpdateKernel;
@@ -80,6 +79,7 @@ namespace htm {
 		cl::Kernel _layerUpdateQWeightsKernel;
 
 		cl::Kernel _reconstructInputKernel;
+		cl::Kernel _learnReconstructionKernel;
 
 		std::vector<float> _input;
 
@@ -97,6 +97,9 @@ namespace htm {
 
 		cl::Image2D _inputImage;
 
+		cl::Image3D _reconstructionWeightsPrev;
+		cl::Image3D _reconstructionWeights;
+
 		cl::Image2D _reconstruction;
 
 		int _reconstructionReceptiveRadius;
@@ -108,11 +111,14 @@ namespace htm {
 		float retrieveQ(sys::ComputeSystem &cs);
 		
 		void learnSpatial(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, unsigned long seed);
-		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, unsigned long seed);
+
+		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, unsigned long seed);
 
 		void updateQWeights(sys::ComputeSystem &cs, float tdError, float cellQWeightEligibilityDecay, float qBiasAlpha);
 
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
+
+		void learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlpha);
 
 		void dutyCycleUpdate(sys::ComputeSystem &cs, float activationDutyCycleDecay, float stateDutyCycleDecay);
 
@@ -123,15 +129,15 @@ namespace htm {
 		float retreiveLayerQ(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc);
 		void learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float cellConnectionAlpha, std::mt19937 &generator);
 		void learnLayerSpatialLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float cellConnectionAlpha, std::mt19937 &generator);
-		void learnLayerSpatialTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float cellConnectionAlpha, std::mt19937 &generator);
-		void learnLayerSpatialTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float cellConnectionAlpha, std::mt19937 &generator);
+		void learnLayerSpatialTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, std::mt19937 &generator);
+		void learnLayerSpatialTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, std::mt19937 &generator);
 		void updateLayerQWeights(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, float tdError, float cellQWeightEligibilityDecay);
 		void dutyCycleLayerUpdate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, float activationDutyCycleDecay, float stateDutyCycleDecay);
 
 	public:
 		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<bool> &actionMask, float minInitWeight, float maxInitWeight, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
