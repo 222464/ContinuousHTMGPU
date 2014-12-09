@@ -289,7 +289,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 					
 					float newTrace = (1.0f - eligibility) * (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
 					
-					float newCellWeight = cellWeightPrev.x + alpha * cellWeightPrev.y;
+					float newCellWeight = cellWeightPrev.x + alpha * newTrace;
 					
 					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newTrace, 0.0f, 0.0f));
 					
@@ -310,7 +310,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 				
 				float newTrace = (1.0f - eligibility) * (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
 				
-				float newCellWeight = cellWeightPrev.x + alpha * cellWeightPrev.y;
+				float newCellWeight = cellWeightPrev.x + alpha * newTrace;
 				
 				write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newTrace, 0.0f, 0.0f));
 					
@@ -360,7 +360,7 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 					
 					float newTrace = (1.0f - eligibility) * (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
 					
-					float newCellWeight = cellWeightPrev.x + alpha * cellWeightPrev.y;
+					float newCellWeight = cellWeightPrev.x + alpha * newTrace;
 					
 					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newTrace, 0.0f, 0.0f));
 					

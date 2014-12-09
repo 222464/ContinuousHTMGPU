@@ -1160,7 +1160,7 @@ void HTMRL::dutyCycleUpdate(sys::ComputeSystem &cs, float activationDutyCycleDec
 }
 
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int annealingIterations, float annealingStdDev, float annealingBreakChance, float annealingDecay, float annealingMomentum, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, std::mt19937 &generator) {
-	/*stepBegin();
+	stepBegin();
 	
 	std::vector<float> maxQInput = _input;
 
@@ -1194,7 +1194,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	for (int i = 0; i < _output.size(); i++)
 	if (_actionMask[i]) {
-		if (perturbationDist(generator) < breakChance)
+		if (uniformDist(generator) < breakChance)
 			_exploratoryOutput[i] = uniformDist(generator);
 		else
 			_exploratoryOutput[i] = std::min<float>(1.0f, std::max<float>(0.0f, _output[i] + perturbationDist(generator)));
@@ -1227,9 +1227,9 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	learnSpatialTemporal(cs, columnConnectionAlpha, tdError > 0.0f ? cellConnectionAlpha : 0.0f, cellWeightEligibilityDecay, learnSeed);
 
 	_prevOutput = _output;
-	_prevOutputExploratory = _exploratoryOutput;*/
+	_prevOutputExploratory = _exploratoryOutput;
 
-	stepBegin(); // Todo: Go back to the non-learning reconstructor
+	/*stepBegin(); // Todo: Go back to the non-learning reconstructor
 
 	// Get initial Q
 	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
@@ -1243,7 +1243,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	for (int j = 0; j < _exploratoryOutput.size(); j++)
 	if (_actionMask[j])
-		_exploratoryOutput[j] = oldOutput[j];
+		_exploratoryOutput[j] = _prevOutput[j];
 
 	activate(_exploratoryOutput, cs, seed);
 
@@ -1292,7 +1292,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 		if (uniformDist(generator) < breakChance)
 			_exploratoryOutput[j] = uniformDist(generator) * 2.0f - 1.0f;
 		else
-			_exploratoryOutput[j] = std::min<float>(1.0f, std::max<float>(-1.0f, _exploratoryOutput[j] + outputPerturbationDist(generator)));
+			_exploratoryOutput[j] = std::min<float>(1.0f, std::max<float>(-1.0f, std::min<float>(1.0f, std::max<float>(-1.0f, _exploratoryOutput[j])) + outputPerturbationDist(generator)));
 	}
 
 	activate(_exploratoryOutput, cs, seed);
@@ -1320,7 +1320,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	getReconstructedPrediction(_prevOutput, cs);
 
-	learnReconstruction(cs, reconstructionAlpha);
+	learnReconstruction(cs, reconstructionAlpha);*/
 }
 
 void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<sf::Image>> &images, unsigned long seed) const {
@@ -1392,7 +1392,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 
 			color = c;
 
-			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _prevOutput[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
+			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _exploratoryOutput[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
 
 			image->setPixel(x - _inputWidth / 2 + maxWidth / 2, y - _inputHeight / 2 + maxHeight / 2, color);
 		}
