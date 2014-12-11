@@ -18,18 +18,19 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float activationIntensity = 1.0f;
-constant float columnIntensity = 1.0f;
+constant float columnIntensity = 0.25f;
 constant float cellStateIntensity = 1.0f;
 constant float cellPredictionIntensity = 1.0f;
-constant float minLearningThreshold = 0.05f;
+constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
-constant float localActivity = 3.0f;
+constant float localActivity = 4.0f;
 constant float uniquenessPower = 4.0f;
 constant float minOverlapForActivation = 0.0f;
 constant float subOverlapIncrement = 0.0005f;
 constant float boostDutyCycleRatio = 0.05f;
 constant float boostMultiplier = 20.0f;
+constant float widthScalar = 1.0f;
+constant float minWidth = 0.0001f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -51,7 +52,7 @@ float boostFunction(float active, float minimum) {
 }
 
 void kernel initializePartOne(write_only image2d_t columnActivations, write_only image2d_t columnStates, write_only image3d_t columnWeights, write_only image2d_t columnDutyCycles,
-	int cellsInColumn, int receptiveFieldSize, int lateralConnectionsSize, uint2 seed, float minWeight, float maxWeight)
+	int cellsInColumn, int receptiveFieldSize, int lateralConnectionsSize, uint2 seed, float minWeight, float maxWeight, float minWidth, float maxWidth)
 {
 	uint2 seedValue = seed + (uint2)(get_global_id(0) * 29 - 12, get_global_id(1) * 16 + 23) * 36;
 
@@ -66,13 +67,19 @@ void kernel initializePartOne(write_only image2d_t columnActivations, write_only
 	for (int wi = 0; wi < receptiveFieldSize; wi++) {
 		int4 weightPosition = (int4)(columnPosition.x, columnPosition.y, wi, 0);
 	
-		float columnConnectionWeight = randFloat(&seedValue);// * (maxWeight - minWeight) + minWeight;
+		float columnConnectionWeight = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
 
 		write_imagef(columnWeights, weightPosition, (float4)(columnConnectionWeight, 0.0f, 0.0f, 0.0f));
 	}
+	
+	int4 widthPosition = (int4)(columnPosition.x, columnPosition.y, receptiveFieldSize, 0);
+	
+	float columnWidth = randFloat(&seedValue) * (maxWidth - minWidth) + minWidth;
+	
+	write_imagef(columnWeights, widthPosition, (float4)(columnWidth, 0.0f, 0.0f, 0.0f));
 }
 
-void kernel initializePartTwo(write_only image3d_t cellStates, write_only image3d_t cellWeights, write_only image3d_t cellPredictions, write_only image3d_t cellQWeights,
+void kernel initializePartTwo(write_only image3d_t cellStates, write_only image3d_t cellWeights, write_only image3d_t cellPredictions,
 	int cellsInColumn, int receptiveFieldSize, int lateralConnectionsSize, uint2 seed, float minWeight, float maxWeight)
 {
 	uint2 seedValue = seed + (uint2)(get_global_id(0) * 32 + 24, get_global_id(1) * 11 - 66) * 23;
@@ -82,10 +89,6 @@ void kernel initializePartTwo(write_only image3d_t cellStates, write_only image3
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 		write_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(0.0f, 0.0f, 0.0f, 0.0f));
-		
-		float cellQWeight = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
-	
-		write_imagef(cellQWeights, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(cellQWeight, 0.0f, 0.0f, 0.0f));
 		
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
 	
@@ -117,17 +120,23 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 			float weight = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 			float inputState = read_imagef(columnStatesInput, inputPosition).x;
 				
-			sum += weight * inputState;
+			float modulation = (float)(abs(dx) + abs(dy)) / (inputReceptiveFieldRadius.x + inputReceptiveFieldRadius.y);
+				
+			float difference = inputState - weight;
+			
+			sum += difference * difference * modulation;
 		}
 		
 		weightIndex++;
 	}
 	
+	float width = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
+	
 	//float boost = read_imagef(columnDutyCyclesPrev, columnPosition).z;
 	
 	//sum *= boost;
 	
-	float output = sum;
+	float output = -sum;
 
 	write_imagef(columnActivations, columnPosition, (float4)(output, output, output, output));
 }
@@ -138,6 +147,8 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only
 	float thisActivation = read_imagef(columnActivations, columnPosition).x;
 	
 	float higherSum = 0.0f;
+	
+	float minimum = 0.0f;
 		
 	for (int dx = -receptiveFieldRadius.x; dx <= receptiveFieldRadius.x; dx++)
 	for (int dy = -receptiveFieldRadius.y; dy <= receptiveFieldRadius.y; dy++) {
@@ -148,10 +159,12 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only
 			
 			if (activation > thisActivation)
 				higherSum += 1.0f;//activation - thisActivation;
+				
+			minimum = fmin(minimum, activation);
 		}
 	}
 	
-	float inhibitedResult = sigmoid((localActivity - higherSum) * columnIntensity) * fmin(1.0f, fmax(0.0f, thisActivation));
+	float inhibitedResult = sigmoid((localActivity - higherSum) * columnIntensity);// * fmin(1.0f, fmax(0.0f, thisActivation));
 	
 	write_imagef(columnStates, columnPosition, (float4)(inhibitedResult, inhibitedResult, inhibitedResult, inhibitedResult));
 }
@@ -187,7 +200,7 @@ void kernel layerColumnDutyCycleUpdate(read_only image2d_t columnActivations, re
 }
 
 void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_only image2d_t columnActivations, read_only image2d_t columnStates, read_only image3d_t columnWeightsPrev, read_only image2d_t columnDutyCyclesPrev, write_only image3d_t columnWeights,
-	int2 layerSize, float2 layerSizeInv, int2 inputReceptiveFieldRadius, int2 inputSize, float2 inputSizeInv, float connectionAlpha, uint2 seed)
+	int2 layerSize, float2 layerSizeInv, int2 inputReceptiveFieldRadius, int2 inputSize, float2 inputSizeInv, float connectionAlpha, float widthAlpha, uint2 seed)
 {
 	uint2 seedValue = seed + (uint2)(get_global_id(0), get_global_id(1)) * 130;
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
@@ -216,17 +229,25 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 				
 			float prevWeight = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 				
-			float change = connectionAlpha * learnScalar * (inputState * 2.0f - 1.0f);
+			float modulation = (float)(abs(dx) + abs(dy)) / (inputReceptiveFieldRadius.x + inputReceptiveFieldRadius.y);
+				
+			float change = connectionAlpha * learnScalar * (inputState - prevWeight) * modulation;
 				
 			//change += globalIncrement;
 				
-			float newWeight = fmin(1.0f, fmax(0.0f, prevWeight + change));
+			float newWeight = prevWeight + change;
 				
 			write_imagef(columnWeights, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0), (float4)(newWeight, newWeight, newWeight, newWeight));
 		}
 		
 		weightIndex++;
 	}
+	
+	float prevWidth = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
+				
+	float newWidth = fmax(0.0f, prevWidth + widthAlpha * learnScalar * (widthScalar / fmax(minWidth, -thisActivation) - prevWidth));
+	
+	write_imagef(columnWeights, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0), (float4)(newWidth, newWidth, newWidth, newWidth));
 }
 
 void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
@@ -496,52 +517,6 @@ void kernel layerColumnPrediction(read_only image3d_t cellPredictions, read_only
 	write_imagef(columnPredictions, columnPosition, (float4)(output, output, output, output));
 }
 
-void kernel layerRetrieveQ(read_only image2d_t columnStates, read_only image2d_t columnDutyCycles, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image2d_t partialQSums, int cellsInColumn) {
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-
-	float state = read_imagef(columnStates, columnPosition).x;
-	
-	//float stateDutyCycle = read_imagef(columnDutyCycles, columnPosition).y;
-	
-	//float uniqueness = pow(fabs(state - stateDutyCycle), uniquenessPower);
-
-	float sum = 0.0f;
-	
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-	
-		float cellQWeight = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		sum += cellQWeight * cellState;
-	}
-	
-	write_imagef(partialQSums, columnPosition, (float4)(sum, sum, sum, sum));
-}
-
-void kernel layerUpdateQWeights(read_only image2d_t columnStates, read_only image2d_t columnDutyCycles, read_only image3d_t cellStates, read_only image3d_t cellQWeightsPrev, write_only image3d_t cellQWeights, int cellsInColumn, float eligibilityDecay, float tdError) {
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	
-	float state = read_imagef(columnStates, columnPosition).x;
-	
-	//float stateDutyCycle = read_imagef(columnDutyCycles, columnPosition).y;
-	
-	//float uniqueness = pow(fabs(state - stateDutyCycle), uniquenessPower);
-	
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-	
-		float eligibility = cellState;
-		
-		float2 cellQWeightPrev = read_imagef(cellQWeightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
-		
-		float newTrace = (1.0f - eligibility) * (1.0f - eligibilityDecay) * cellQWeightPrev.y + eligibility;
- 
-		float2 newCellQWeight = (float2)(cellQWeightPrev.x + tdError * cellQWeightPrev.y, newTrace);
-
-		write_imagef(cellQWeights, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellQWeight.x, newCellQWeight.y, 0.0f, 0.0f));
-	}
-}
-
 void kernel reconstructionInit(write_only image3d_t reconstructionWeights, int reconstructionNumWeights, uint2 seed, float minWeight, float maxWeight) {
 	uint2 seedValue = seed + (uint2)(get_global_id(0), get_global_id(1)) * 50;
 
@@ -583,7 +558,7 @@ void kernel reconstructInput(read_only image3d_t reconstructionWeights, read_onl
 		
 	sum += bias;
 
-	float output = sigmoid(sum);
+	float output = fmin(1.0f, fmax(0.0f, sum));
 	
 	write_imagef(inputs, inputPosition, (float4)(output, output, output, output));
 }
@@ -595,7 +570,7 @@ void kernel learnReconstruction(read_only image2d_t targets, read_only image2d_t
  	float target = read_imagef(targets, inputPosition).x;
  	float input = read_imagef(inputs, inputPosition).x;
  	
- 	float error = alpha * (target - input) * input * (1.0f - input);
+ 	float error = alpha * (target - input);// * input * (1.0f - input);
  	
  	int wi = 0;
  	

@@ -151,14 +151,19 @@ int main() {
 	layerDescs[2]._inhibitionRadius = 5;
 	layerDescs[2]._qInfluenceMultiplier = 1.0f;
 
-	std::vector<bool> actionMask(64 * 64, false);
+	std::vector<htm::HTMRL::InputType> inputTypes(64 * 64, htm::HTMRL::_state);
 
-	for (int x = 0; x < 64; x++)
-	for (int y = 32; y < 64; y++) {
-		actionMask[x + y * 64] = true;
+	for (int x = 0; x < 64; x++) {
+		for (int y = 32; y < 35; y++) {
+			inputTypes[x + y * 64] = htm::HTMRL::_q;
+		}
+
+		for (int y = 35; y < 64; y++) {
+			inputTypes[x + y * 64] = htm::HTMRL::_action;
+		}
 	}
 
-	agent.createRandom(cs, program, 64, 64, layerDescs, actionMask, -0.2f, 0.2f, generator);
+	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, -0.2f, 0.2f, 0.0f, 1.0f, 0.01f, 1.0f, -0.1f, 0.1f, 0.1f, 1.0f, generator);
 
 	sf::RenderTexture htmRT;
 	htmRT.create(1024, 1024, false);
@@ -223,7 +228,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.2f, 0.2f, 0.02f, 0.02f, 0.01f, 0.01f, 0.2f, 0.0f, 2, 0.1f, 0.02f, 0.78f, 0.4f, 0.0005f, 0.992f, 0.0f, 0.03f, 0.03f, generator);
+		agent.step(cs, reward, 0.01f, 0.01f, 0.01f, 0.02f, 0.02f, 0.01f, 0.01f, 0.2f, 0.0f, 18.0f, 0.5f, 0.05f, 0.01f, 1.0f, 0.001f, 0.05f, 0.8f, 0.992f, 0.0f, 0.03f, 0.03f, generator);
 
 		/*float output = 0.0f;
 
