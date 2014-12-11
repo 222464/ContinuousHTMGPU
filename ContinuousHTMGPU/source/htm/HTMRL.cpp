@@ -1305,13 +1305,6 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	std::cout << tdError << " " << exploratoryQ << std::endl;
 
-	//_prevMaxQ = maxQ;
-	_prevValue = exploratoryQ;
-
-	//if (tdError < 0.0f)
-	//	activate(maxQInput, cs, seed);
-
-	//activate(_input, cs, seed);
 	float q = _prevValue + tdError;
 
 	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
@@ -1334,6 +1327,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	learnReconstruction(cs, reconstructionAlpha);
 
+	_prevValue = exploratoryQ;
 	_prevOutput = _output;
 	_prevOutputExploratory = _exploratoryOutput;
 }

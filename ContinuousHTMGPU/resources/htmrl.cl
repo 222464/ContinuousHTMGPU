@@ -136,7 +136,7 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 	
 	//sum *= boost;
 	
-	float output = -sum;
+	float output = -sum * width;
 
 	write_imagef(columnActivations, columnPosition, (float4)(output, output, output, output));
 }
