@@ -28,6 +28,8 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	_qBias = weightDist(generator);
 	_prevMaxQ = 0.0f;
 	_prevValue = 0.0f;
+	_prevPrevValue = 0.0f;
+	_prevQ = 0.0f;
 
 	cl::Kernel initPartOneKernel = cl::Kernel(program.getProgram(), "initializePartOne");
 	cl::Kernel initPartTwoKernel = cl::Kernel(program.getProgram(), "initializePartTwo");
@@ -172,6 +174,7 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 
 	layer._cellStates = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
 	layer._cellStatesPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
+	layer._cellStatesPrevPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
 
 	layer._cellPredictions = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
 	layer._cellPredictionsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
@@ -290,6 +293,7 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 		region[2] = layerDesc._cellsInColumn;
 
 		cs.getQueue().enqueueCopyImage(layer._cellStates, layer._cellStatesPrev, origin, origin, region);
+		cs.getQueue().enqueueCopyImage(layer._cellStates, layer._cellStatesPrevPrev, origin, origin, region);
 	}
 
 	{
@@ -1258,15 +1262,14 @@ void HTMRL::learnQEncoder(float q, float prevQ, float centerAlpha, float widthAl
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, float localActivity, float outputIntensity, float encoderCenterAlpha, float encoderWidthAlpha, float encoderWidthScalar, float encoderMinWidth, float encoderReconAlpha, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, std::mt19937 &generator) {
 	stepBegin();
 	
-	std::vector<float> maxQInput = _input;
-
 	// Complete input
 	for (int j = 0; j < _input.size(); j++)
-	if (_inputTypes[j] != _state) {
+	if (_inputTypes[j] != _state)
 		_input[j] = _prevOutputExploratory[j];
 
-		maxQInput[j] = _prevOutput[j];
-	}
+	setQ(_input, _prevQ, localActivity, outputIntensity);
+
+	learnQEncoder(_prevQ, _prevValue, encoderCenterAlpha, encoderWidthAlpha, encoderWidthScalar, encoderMinWidth, encoderReconAlpha);
 
 	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
 	std::uniform_int_distribution<int> seedDist(0, 10000);
@@ -1277,10 +1280,20 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	activate(_input, cs, seed);
 
+	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
+
 	// Get prediction for next action
 	getReconstructedPrediction(_output, cs);
 
 	float exploratoryQ = retrieveQ(_output);
+
+	float newQ = reward + gamma * exploratoryQ;
+
+	float tdError = alpha * (newQ - _prevValue);
+
+	std::cout << tdError << " " << exploratoryQ << std::endl;
+
+	float q = _prevValue + tdError;
 
 	std::normal_distribution<float> perturbationDist(0.0f, perturbationStdDev);
 
@@ -1294,42 +1307,15 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	else
 		_exploratoryOutput[i] = _output[i];
 
-	float newQ = reward + gamma * exploratoryQ;
-
-	//float suboptimality = std::max<float>(0.0f, (_prevMaxQ - newQ) * tauInv);
-
-	//float adv = newQ - suboptimality;
-	float adv = newQ;
-
-	float tdError = alpha * (adv - _prevValue);
-
-	std::cout << tdError << " " << exploratoryQ << std::endl;
-
-	float q = _prevValue + tdError;
-
-	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
-
-	setQ(_input, q, localActivity, outputIntensity);
-
-	learnQEncoder(q, _prevValue, encoderCenterAlpha, encoderWidthAlpha, encoderWidthScalar, encoderMinWidth, encoderReconAlpha);
-
-	if (tdError < 0.0f) {
-		for (int j = 0; j < _input.size(); j++)
-		if (_inputTypes[j] == _action)
-			_input[j] = maxQInput[j];
-	}
-
-	activate(_input, cs, seed);
-
-	learnSpatialTemporal(cs, cellConnectionAlpha, widthAlpha, cellConnectionAlpha, cellWeightEligibilityDecay, learnSeed);
-
-	getReconstructedPrediction(_output, cs);
+	learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, tdError * cellConnectionAlpha, cellWeightEligibilityDecay, learnSeed);
 
 	learnReconstruction(cs, reconstructionAlpha);
 
+	_prevPrevValue = _prevValue;
 	_prevValue = exploratoryQ;
 	_prevOutput = _output;
 	_prevOutputExploratory = _exploratoryOutput;
+	_prevQ = q;
 }
 
 void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<sf::Image>> &images, unsigned long seed) const {
@@ -1401,7 +1387,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 
 			color = c;
 
-			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _exploratoryOutput[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
+			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _output[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
 
 			image->setPixel(x - _inputWidth / 2 + maxWidth / 2, y - _inputHeight / 2 + maxHeight / 2, color);
 		}

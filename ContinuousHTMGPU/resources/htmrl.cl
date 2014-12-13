@@ -136,7 +136,7 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 	
 	//sum *= boost;
 	
-	float output = -sum * width;
+	float output = -sum;// * width;
 
 	write_imagef(columnActivations, columnPosition, (float4)(output, output, output, output));
 }
@@ -308,7 +308,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 					
 					float eligibility = predictionError * connectionState;
 					
-					float newTrace = (1.0f - eligibility) * (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
+					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
 					
 					float newCellWeight = cellWeightPrev.x + alpha * newTrace;
 					
@@ -329,7 +329,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 
 				float eligibility = predictionError * nextContextPrev;
 				
-				float newTrace = (1.0f - eligibility) * (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
+				float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
 				
 				float newCellWeight = cellWeightPrev.x + alpha * newTrace;
 				
@@ -379,7 +379,7 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 					
 					float eligibility = predictionError * connectionState;
 					
-					float newTrace = (1.0f - eligibility) * (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
+					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
 					
 					float newCellWeight = cellWeightPrev.x + alpha * newTrace;
 					

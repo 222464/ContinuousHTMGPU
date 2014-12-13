@@ -43,7 +43,7 @@ namespace htm {
 		void create(int sdrSize, int inputSize, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, float minInitWeight, float maxInitWeight, std::mt19937 &generator);
 
 		void encode(const std::vector<float> &input, std::vector<float> &sdr, float localActivity, float outputIntensity);
-		void learn(const std::vector<float> &input, const std::vector<float> &recon, float centerAlpha, float widthAlpha, float widthScalar, float minWidth, float reconAlpha);
+		void learn(const std::vector<float> &input, const std::vector<float> &recon, float centerAlpha, float widthAlpha, float widthScalar, float minWidth, float reconAlpha, float outputBaseline = 0.05f);
 		void decode(const std::vector<float> &sdr, std::vector<float> &recon);
 	};
 }

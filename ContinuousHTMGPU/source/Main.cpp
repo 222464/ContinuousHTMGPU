@@ -154,11 +154,11 @@ int main() {
 	std::vector<htm::HTMRL::InputType> inputTypes(64 * 64, htm::HTMRL::_state);
 
 	for (int x = 0; x < 64; x++) {
-		for (int y = 32; y < 34; y++) {
+		for (int y = 32; y < 40; y++) {
 			inputTypes[x + y * 64] = htm::HTMRL::_q;
 		}
 
-		for (int y = 34; y < 64; y++) {
+		for (int y = 40; y < 64; y++) {
 			inputTypes[x + y * 64] = htm::HTMRL::_action;
 		}
 	}
@@ -228,7 +228,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.01f, 0.01f, 0.01f, 0.02f, 0.02f, 0.01f, 0.01f, 0.2f, 0.0f, 8.0f, 0.4f, 0.15f, 0.15f, 1.0f, 0.0001f, 0.1f, 0.5f, 0.992f, 0.0f, 0.06f, 0.06f, generator);
+		agent.step(cs, reward, 0.01f, 0.01f, 0.01f, 0.05f, 0.02f, 0.01f, 0.01f, 0.2f, 0.0f, 3.0f, 1.0f, 0.1f, 0.1f, 1.0f, 0.001f, 0.01f, 0.7f, 0.992f, 0.0f, 0.05f, 0.05f, generator);
 
 		/*float output = 0.0f;
 

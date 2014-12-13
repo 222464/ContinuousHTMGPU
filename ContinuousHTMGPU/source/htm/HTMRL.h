@@ -54,6 +54,7 @@ namespace htm {
 			cl::Image3D _cellWeightsPrev;
 			cl::Image3D _cellWeights;
 
+			cl::Image3D _cellStatesPrevPrev;
 			cl::Image3D _cellStatesPrev;
 			cl::Image3D _cellStates;
 
@@ -96,6 +97,8 @@ namespace htm {
 		float _qBias;
 		float _prevMaxQ;
 		float _prevValue;
+		float _prevPrevValue;
+		float _prevQ;
 
 		cl::Image2D _inputImage;
 
