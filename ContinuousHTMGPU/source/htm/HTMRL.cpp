@@ -161,7 +161,7 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 	else
 		lateralConnectionsSize = std::pow(layerDesc._lateralConnectionRadius * 2 + 1, 2) * (layerDesc._cellsInColumn + 1) + 1; // + 1 for bias
 
-	layer._columnActivations = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
+	layer._columnActivations = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height);
 	
 	layer._columnStates = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
 	layer._columnStatesPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
@@ -1111,7 +1111,7 @@ void HTMRL::dutyCycleLayerUpdate(sys::ComputeSystem &cs, Layer &layer, const Lay
 	cs.getQueue().enqueueNDRangeKernel(_layerColumnDutyCycleUpdateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 }
 
-void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs) {
+void HTMRL::getReconstruction(std::vector<float> &prediction, sys::ComputeSystem &cs) {
 	struct Int2 {
 		int _x, _y;
 	};
@@ -1146,6 +1146,71 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 
 	_reconstructInputKernel.setArg(0, _reconstructionWeightsPrev);
 	_reconstructInputKernel.setArg(1, _layers.front()._columnStates);
+	_reconstructInputKernel.setArg(2, _reconstruction);
+	_reconstructInputKernel.setArg(3, reconstructionReceptiveFieldRadii);
+	_reconstructInputKernel.setArg(4, inputSizeInv);
+	_reconstructInputKernel.setArg(5, layerSize);
+	_reconstructInputKernel.setArg(6, layerSizeInv);
+	_reconstructInputKernel.setArg(7, inputOverSdr);
+
+	cs.getQueue().enqueueNDRangeKernel(_reconstructInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
+
+	cs.getQueue().flush();
+
+	if (prediction.size() != _input.size())
+		prediction.resize(_input.size());
+
+	// Read prediction
+	{
+		cl::size_t<3> origin;
+		origin[0] = 0;
+		origin[1] = 0;
+		origin[2] = 0;
+
+		cl::size_t<3> region;
+		region[0] = _inputWidth;
+		region[1] = _inputHeight;
+		region[2] = 1;
+
+		cs.getQueue().enqueueReadImage(_reconstruction, CL_TRUE, origin, region, 0, 0, &prediction[0]);
+	}
+}
+
+void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs) {
+	struct Int2 {
+		int _x, _y;
+	};
+
+	struct Float2 {
+		float _x, _y;
+	};
+
+	Float2 inputSizeInv;
+	inputSizeInv._x = 1.0f / _inputWidth;
+	inputSizeInv._y = 1.0f / _inputHeight;
+
+	Int2 layerSize;
+	layerSize._x = _layerDescs.front()._width;
+	layerSize._y = _layerDescs.front()._height;
+
+	Float2 layerSizeInv;
+	layerSizeInv._x = 1.0f / _layerDescs.front()._width;
+	layerSizeInv._y = 1.0f / _layerDescs.front()._height;
+
+	Int2 reconstructionReceptiveFieldRadii;
+	reconstructionReceptiveFieldRadii._x = _reconstructionReceptiveRadius;
+	reconstructionReceptiveFieldRadii._y = _reconstructionReceptiveRadius;
+
+	Int2 sdrReceptiveFieldRadii;
+	sdrReceptiveFieldRadii._x = _layerDescs.front()._receptiveFieldRadius;
+	sdrReceptiveFieldRadii._y = _layerDescs.front()._receptiveFieldRadius;
+
+	Float2 inputOverSdr;
+	inputOverSdr._x = static_cast<float>(_inputWidth) / _layerDescs.front()._width;
+	inputOverSdr._y = static_cast<float>(_inputHeight) / _layerDescs.front()._height;
+
+	_reconstructInputKernel.setArg(0, _reconstructionWeightsPrev);
+	_reconstructInputKernel.setArg(1, _layers.front()._columnPredictions);
 	_reconstructInputKernel.setArg(2, _reconstruction);
 	_reconstructInputKernel.setArg(3, reconstructionReceptiveFieldRadii);
 	_reconstructInputKernel.setArg(4, inputSizeInv);
@@ -1267,10 +1332,6 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	if (_inputTypes[j] != _state)
 		_input[j] = _prevOutputExploratory[j];
 
-	setQ(_input, _prevQ, localActivity, outputIntensity);
-
-	learnQEncoder(_prevQ, _prevValue, encoderCenterAlpha, encoderWidthAlpha, encoderWidthScalar, encoderMinWidth, encoderReconAlpha);
-
 	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
 	std::uniform_int_distribution<int> seedDist(0, 10000);
 
@@ -1279,8 +1340,6 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	int learnSeed = seedDist(generator);
 
 	activate(_input, cs, seed);
-
-	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
 
 	// Get prediction for next action
 	getReconstructedPrediction(_output, cs);
@@ -1295,6 +1354,22 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 
 	float q = _prevValue + tdError;
 
+	setQ(_input, q, localActivity, outputIntensity);
+
+	float reconstruction = retrieveQ(_input);
+
+	learnQEncoder(q, reconstruction, encoderCenterAlpha, encoderWidthAlpha, encoderWidthScalar, encoderMinWidth, encoderReconAlpha);
+
+	activate(_input, cs, seed);
+
+	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
+
+	std::vector<float> stateRecon;
+
+	getReconstruction(stateRecon, cs);
+
+	learnReconstruction(cs, reconstructionAlpha);
+
 	std::normal_distribution<float> perturbationDist(0.0f, perturbationStdDev);
 
 	for (int i = 0; i < _output.size(); i++)
@@ -1307,9 +1382,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	else
 		_exploratoryOutput[i] = _output[i];
 
-	learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, tdError * cellConnectionAlpha, cellWeightEligibilityDecay, learnSeed);
-
-	learnReconstruction(cs, reconstructionAlpha);
+	learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, tdError > 0.0f ? cellConnectionAlpha : 0.0f, cellWeightEligibilityDecay, learnSeed);
 
 	_prevPrevValue = _prevValue;
 	_prevValue = exploratoryQ;
@@ -1387,7 +1460,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 
 			color = c;
 
-			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _output[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
+			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _input[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
 
 			image->setPixel(x - _inputWidth / 2 + maxWidth / 2, y - _inputHeight / 2 + maxHeight / 2, color);
 		}

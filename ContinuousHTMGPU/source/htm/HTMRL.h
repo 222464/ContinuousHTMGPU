@@ -32,7 +32,7 @@ namespace htm {
 			float _qInfluenceMultiplier;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(6), _lateralConnectionRadius(4), _inhibitionRadius(6), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
+				: _width(16), _height(16), _receptiveFieldRadius(6), _lateralConnectionRadius(4), _inhibitionRadius(6), _cellsInColumn(6), _qInfluenceMultiplier(1.0f)
 			{}
 		};
 	private:
@@ -119,6 +119,7 @@ namespace htm {
 
 		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, unsigned long seed);
 
+		void getReconstruction(std::vector<float> &reconstruction, sys::ComputeSystem &cs);
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
 
 		void learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlpha);

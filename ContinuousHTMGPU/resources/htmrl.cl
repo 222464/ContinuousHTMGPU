@@ -136,9 +136,9 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 	
 	//sum *= boost;
 	
-	float output = -sum;// * width;
+	float output = -sum * width;
 
-	write_imagef(columnActivations, columnPosition, (float4)(output, output, output, output));
+	write_imagef(columnActivations, columnPosition, (float4)(output, sum, output, output));
 }
 
 void kernel layerColumnInhibit(read_only image2d_t columnActivations, write_only image2d_t columnStates, int2 layerSize, float2 layerSizeInv, int2 receptiveFieldRadius) {
@@ -208,7 +208,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 
 	float thisState = read_imagef(columnStates, columnPosition).x;
 	
-	float thisActivation = read_imagef(columnActivations, columnPosition).x;
+	float2 thisActivation = read_imagef(columnActivations, columnPosition).xy;
 	
 	float2 dutyCyclePrev = read_imagef(columnDutyCyclesPrev, columnPosition).xy;
 	
@@ -245,7 +245,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 	
 	float prevWidth = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 				
-	float newWidth = fmax(0.0f, prevWidth + widthAlpha * learnScalar * (widthScalar / fmax(minWidth, -thisActivation) - prevWidth));
+	float newWidth = fmax(0.0f, prevWidth + widthAlpha * learnScalar * (widthScalar / fmax(minWidth, thisActivation.y) - prevWidth));
 	
 	write_imagef(columnWeights, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0), (float4)(newWidth, newWidth, newWidth, newWidth));
 }

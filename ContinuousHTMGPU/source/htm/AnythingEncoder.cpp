@@ -27,8 +27,6 @@ void AnythingEncoder::create(int sdrSize, int inputSize, float minInitCenter, fl
 	for (int i = 0; i < _inputSize; i++) {
 		_recons[i]._reconWeights.resize(sdrSize);
 
-		_recons[i]._reconBias = weightDist(generator);
-
 		for (int j = 0; j < _sdrSize; j++)
 			_recons[i]._reconWeights[j] = weightDist(generator);
 	}
@@ -47,7 +45,8 @@ void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float>
 			sum += difference * difference;
 		}
 
-		_nodes[i]._activation = -sum * _nodes[i]._width;
+		_nodes[i]._sum = sum;
+		_nodes[i]._activation = -_nodes[i]._sum * _nodes[i]._width;
 	}
 
 	// Inhibit
@@ -73,13 +72,11 @@ void AnythingEncoder::learn(const std::vector<float> &input, const std::vector<f
 			_nodes[i]._center[j] += centerAlpha * learnScalar * difference;
 		}
 
-		_nodes[i]._width = std::max(0.0f, _nodes[i]._width + widthAlpha * learnScalar * (widthScalar / std::max(minWidth, -_nodes[i]._activation) - _nodes[i]._width));
+		_nodes[i]._width = std::max(0.0f, _nodes[i]._width + widthAlpha * learnScalar * (widthScalar / std::max(minWidth, _nodes[i]._sum) - _nodes[i]._width));
 	}
 
 	for (int i = 0; i < _inputSize; i++) {
 		float reconError = reconAlpha * (input[i] - recon[i]);
-
-		_recons[i]._reconBias += reconError;
 
 		for (int j = 0; j < _sdrSize; j++)
 			_recons[i]._reconWeights[j] += reconError * _nodes[j]._output;
@@ -91,7 +88,7 @@ void AnythingEncoder::decode(const std::vector<float> &sdr, std::vector<float> &
 		recon.resize(_inputSize);
 
 	for (int i = 0; i < _inputSize; i++) {
-		float sum = _recons[i]._reconBias;
+		float sum = 0.0f;
 
 		for (int j = 0; j < _sdrSize; j++)
 			sum += _recons[i]._reconWeights[j] * _nodes[j]._output;
