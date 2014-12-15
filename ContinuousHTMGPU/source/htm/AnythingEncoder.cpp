@@ -1,7 +1,5 @@
 #include <htm/AnythingEncoder.h>
 
-#include <algorithm>
-
 using namespace htm;
 
 void AnythingEncoder::create(int sdrSize, int inputSize, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, float minInitWeight, float maxInitWeight, std::mt19937 &generator) {
@@ -32,7 +30,7 @@ void AnythingEncoder::create(int sdrSize, int inputSize, float minInitCenter, fl
 	}
 }
 
-void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float> &sdr, float localActivity, float outputIntensity) {
+void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float> &sdr, float localActivity, float outputIntensity, float dutyCycleDecay, float boostThreshold, float boostIntensity) {
 	if (sdr.size() != _sdrSize)
 		sdr.resize(_sdrSize);
 
@@ -58,7 +56,11 @@ void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float>
 				numHigher++;
 		}
 
-		sdr[i] = _nodes[i]._output = sigmoid((localActivity - numHigher) * outputIntensity);
+		float boost = boostFunction(_nodes[i]._dutyCycle, boostThreshold, boostIntensity);
+
+		sdr[i] = _nodes[i]._output = (1.0f - boost) * sigmoid((localActivity - numHigher) * outputIntensity) + boost;
+
+		_nodes[i]._dutyCycle = (1.0f - dutyCycleDecay) * _nodes[i]._dutyCycle + dutyCycleDecay * _nodes[i]._output;
 	}
 }
 
