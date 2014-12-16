@@ -18,8 +18,8 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float columnIntensity = 0.25f;
-constant float cellStateIntensity = 1.0f;
+constant float columnIntensity = 0.5f;
+constant float cellStateIntensity = 4.0f;
 constant float cellPredictionIntensity = 1.0f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
@@ -132,7 +132,7 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 	
 	float width = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 
-	float output = -sum * width;
+	float output = -sum;// * width;
 
 	write_imagef(columnActivations, columnPosition, (float4)(output, sum, output, output));
 }
@@ -212,7 +212,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 	
 	//float globalIncrement = fmax(0.0f, minOverlapForActivation - dutyCyclePrev.x) * subOverlapIncrement;
 	
-	float learnScalar = fmax(0.0f, thisState - minLearningThreshold);
+	float learnScalar = fmax(0.0f, thisState * (1.0f - thisState) - minLearningThreshold);
 
 	// Adjust weights by their source activations and error
 	int weightIndex = 0;

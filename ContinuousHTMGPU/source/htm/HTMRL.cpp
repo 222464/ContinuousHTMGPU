@@ -1458,7 +1458,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 
 			color = c;
 
-			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _output[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
+			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _input[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
 
 			image->setPixel(x - _inputWidth / 2 + maxWidth / 2, y - _inputHeight / 2 + maxHeight / 2, color);
 		}

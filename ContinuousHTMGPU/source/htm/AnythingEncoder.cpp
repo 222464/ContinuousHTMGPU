@@ -44,7 +44,7 @@ void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float>
 		}
 
 		_nodes[i]._sum = sum;
-		_nodes[i]._activation = -_nodes[i]._sum * _nodes[i]._width;
+		_nodes[i]._activation = -_nodes[i]._sum;// *_nodes[i]._width;
 	}
 
 	// Inhibit
@@ -66,7 +66,7 @@ void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float>
 
 void AnythingEncoder::learn(const std::vector<float> &input, const std::vector<float> &recon, float centerAlpha, float widthAlpha, float widthScalar, float minWidth, float reconAlpha, float outputBaseline) {
 	for (int i = 0; i < _sdrSize; i++) {
-		float learnScalar = (_nodes[i]._output + outputBaseline) * (1.0f - outputBaseline);
+		float learnScalar = (_nodes[i]._output * (1.0f - _nodes[i]._output) + outputBaseline) * (1.0f - outputBaseline);
 
 		for (int j = 0; j < _inputSize; j++) {
 			float difference = input[j] - _nodes[i]._center[j];

@@ -42,7 +42,7 @@ namespace htm {
 		std::vector<Recon> _recons;
 
 		static float boostFunction(float dutyCycle, float threshold, float intensity) {
-			return std::min<float>(1.0f, std::max<float>(0.0f, threshold - dutyCycle) * intensity);
+			return std::min<float>(1.0f, std::max<float>(0.0f, threshold - dutyCycle) / threshold);
 		}
 
 	public:
