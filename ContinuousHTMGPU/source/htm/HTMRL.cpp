@@ -1311,17 +1311,17 @@ float HTMRL::retrieveQ(const std::vector<float> &sdr) {
 	return result[0];
 }
 
-void HTMRL::setQ(std::vector<float> &sdr, float q, float localActivity, float outputIntensity, float dutyCycleDecay, float boostThreshold, float boostIntensity) {
+void HTMRL::setQ(std::vector<float> &sdr, float q, float localActivity, float outputIntensity, float dutyCycleDecay) {
 	std::vector<float> result;
 
-	_qEncoder.encode(std::vector<float>(1, q), result, localActivity, outputIntensity, dutyCycleDecay, boostThreshold, boostIntensity);
+	_qEncoder.encode(std::vector<float>(1, q), result, localActivity, outputIntensity, dutyCycleDecay);
 
 	for (int i = 0; i < _qInputIndices.size(); i++)
 		sdr[_qInputIndices[i]] = result[i];
 }
 
-void HTMRL::learnQEncoder(float q, float prevQ, float centerAlpha, float widthAlpha, float widthScalar, float minWidth, float reconAlpha) {
-	_qEncoder.learn(std::vector<float>(1, q), std::vector<float>(1, prevQ), centerAlpha, widthAlpha, widthScalar, minWidth, reconAlpha);
+void HTMRL::learnQEncoder(float q, float prevQ, float centerAlpha, float widthAlpha, float widthScalar, float minWidth, float reconAlpha, float boostThreshold, float boostIntensity) {
+	_qEncoder.learn(std::vector<float>(1, q), std::vector<float>(1, prevQ), centerAlpha, widthAlpha, widthScalar, minWidth, reconAlpha, boostThreshold, boostIntensity);
 }
 
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, float encoderLocalActivity, float encoderOutputIntensity, float encoderDutyCycleDecay, float encoderBoostThreshold, float encoderBoostIntensity, float encoderCenterAlpha, float encoderWidthAlpha, float encoderWidthScalar, float encoderMinWidth, float encoderReconAlpha, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, std::mt19937 &generator) {
@@ -1332,11 +1332,11 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlp
 	if (_inputTypes[j] != _state)
 		_input[j] = _prevOutputExploratory[j];
 
-	setQ(_input, _prevQ, encoderLocalActivity, encoderOutputIntensity, encoderDutyCycleDecay, encoderBoostThreshold, encoderBoostIntensity);
+	setQ(_input, _prevQ, encoderLocalActivity, encoderOutputIntensity, encoderDutyCycleDecay);
 
 	float reconstruction = retrieveQ(_input);
 
-	learnQEncoder(_prevQ, reconstruction, encoderCenterAlpha, encoderWidthAlpha, encoderWidthScalar, encoderMinWidth, encoderReconAlpha);
+	learnQEncoder(_prevQ, reconstruction, encoderCenterAlpha, encoderWidthAlpha, encoderWidthScalar, encoderMinWidth, encoderReconAlpha, encoderBoostThreshold, encoderBoostIntensity);
 
 	std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
 	std::uniform_int_distribution<int> seedDist(0, 10000);
@@ -1458,7 +1458,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 
 			color = c;
 
-			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _input[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
+			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _output[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
 
 			image->setPixel(x - _inputWidth / 2 + maxWidth / 2, y - _inputHeight / 2 + maxHeight / 2, color);
 		}

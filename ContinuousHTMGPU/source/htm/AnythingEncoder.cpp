@@ -30,7 +30,7 @@ void AnythingEncoder::create(int sdrSize, int inputSize, float minInitCenter, fl
 	}
 }
 
-void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float> &sdr, float localActivity, float outputIntensity, float dutyCycleDecay, float boostThreshold, float boostIntensity) {
+void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float> &sdr, float localActivity, float outputIntensity, float dutyCycleDecay) {
 	if (sdr.size() != _sdrSize)
 		sdr.resize(_sdrSize);
 
@@ -44,7 +44,7 @@ void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float>
 		}
 
 		_nodes[i]._sum = sum;
-		_nodes[i]._activation = -_nodes[i]._sum;// *_nodes[i]._width;
+		_nodes[i]._activation = -_nodes[i]._sum *_nodes[i]._width;
 	}
 
 	// Inhibit
@@ -56,17 +56,15 @@ void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float>
 				numHigher++;
 		}
 
-		float boost = boostFunction(_nodes[i]._dutyCycle, boostThreshold, boostIntensity);
+		sdr[i] = _nodes[i]._output = sigmoid((localActivity - numHigher) * outputIntensity);
 
-		sdr[i] = _nodes[i]._output = (1.0f - boost) * sigmoid((localActivity - numHigher) * outputIntensity) + boost;
-
-		_nodes[i]._dutyCycle = (1.0f - dutyCycleDecay) * _nodes[i]._dutyCycle + dutyCycleDecay * _nodes[i]._output;
+		_nodes[i]._dutyCycle = (1.0f - dutyCycleDecay) * (1.0f - _nodes[i]._output) * _nodes[i]._dutyCycle + _nodes[i]._output;
 	}
 }
 
-void AnythingEncoder::learn(const std::vector<float> &input, const std::vector<float> &recon, float centerAlpha, float widthAlpha, float widthScalar, float minWidth, float reconAlpha, float outputBaseline) {
+void AnythingEncoder::learn(const std::vector<float> &input, const std::vector<float> &recon, float centerAlpha, float widthAlpha, float widthScalar, float minWidth, float reconAlpha, float boostThreshold, float boostIntensity) {
 	for (int i = 0; i < _sdrSize; i++) {
-		float learnScalar = (_nodes[i]._output * (1.0f - _nodes[i]._output) + outputBaseline) * (1.0f - outputBaseline);
+		float learnScalar = boostFunction(_nodes[i]._dutyCycle, boostThreshold, boostIntensity);
 
 		for (int j = 0; j < _inputSize; j++) {
 			float difference = input[j] - _nodes[i]._center[j];

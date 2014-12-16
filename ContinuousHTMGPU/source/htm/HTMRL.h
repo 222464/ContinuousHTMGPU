@@ -127,8 +127,8 @@ namespace htm {
 		void dutyCycleUpdate(sys::ComputeSystem &cs, float activationDutyCycleDecay, float stateDutyCycleDecay);
 
 		float retrieveQ(const std::vector<float> &sdr);
-		void setQ(std::vector<float> &sdr, float q, float localActivity, float outputIntensity, float dutyCycleDecay, float boostThreshold, float boostIntensity);
-		void learnQEncoder(float q, float prevQ, float centerAlpha, float widthAlpha, float widthScalar, float minWidth, float reconAlpha);
+		void setQ(std::vector<float> &sdr, float q, float localActivity, float outputIntensity, float dutyCycleDecay);
+		void learnQEncoder(float q, float prevQ, float centerAlpha, float widthAlpha, float widthScalar, float minWidth, float reconAlpha, float boostThreshold, float boostIntensity);
 
 		void initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, int inputWidth, int inputHeight, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
 		void activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
