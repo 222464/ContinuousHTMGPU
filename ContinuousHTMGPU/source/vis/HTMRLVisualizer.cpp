@@ -13,15 +13,16 @@ void HTMRLVisualizer::update(sf::RenderTexture &target, const sf::Vector2f &posi
 
 	const float heightStep = 1.0f;
 	const float transparency = 0.3f;
-	const int cellLayerSteps = 8;
+	const int cellLayerSteps = 4;
 
 	int h = 0;
+
+	sf::Texture imageTexture;
 
 	for (int i = 0; i < images.size(); i++) {
 		// Render to RT
 		_rt.setActive();
 
-		sf::Texture imageTexture;
 		imageTexture.loadFromImage(*images[i]);
 
 		imageTexture.setSmooth(false);
@@ -35,7 +36,15 @@ void HTMRLVisualizer::update(sf::RenderTexture &target, const sf::Vector2f &posi
 		imageSprite.setPosition(_rt.getSize().x * 0.5f, _rt.getSize().y * 0.5f);
 		imageSprite.setScale(static_cast<float>(_rt.getSize().x) / imageTexture.getSize().x * 0.75f, static_cast<float>(_rt.getSize().y) / imageTexture.getSize().y * 0.75f);
 
-		_rt.clear(sf::Color::Transparent);
+		sf::RenderStates clearStates;
+		clearStates.blendMode = sf::BlendNone;
+
+		sf::RectangleShape clearShape;
+		clearShape.setSize(sf::Vector2f(_rt.getSize().x, _rt.getSize().y));
+		clearShape.setFillColor(sf::Color::Transparent);
+
+		_rt.draw(clearShape, clearStates);
+
 		_rt.draw(imageSprite);
 
 		_rt.display();
@@ -59,4 +68,6 @@ void HTMRLVisualizer::update(sf::RenderTexture &target, const sf::Vector2f &posi
 			h++;
 		}
 	}
+
+	target.display();
 }

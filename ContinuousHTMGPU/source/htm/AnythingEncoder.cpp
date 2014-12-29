@@ -44,7 +44,7 @@ void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float>
 		}
 
 		_nodes[i]._sum = sum;
-		_nodes[i]._activation = -_nodes[i]._sum *_nodes[i]._width;
+		_nodes[i]._activation = -_nodes[i]._sum;// * _nodes[i]._width;
 	}
 
 	// Inhibit

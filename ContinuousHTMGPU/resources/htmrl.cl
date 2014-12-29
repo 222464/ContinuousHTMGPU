@@ -18,9 +18,9 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float columnIntensity = 2.0f;
-constant float cellStateIntensity = 4.0f;
-constant float cellPredictionIntensity = 1.0f;
+constant float columnIntensity = 10.0f;
+constant float cellStateIntensity = 6.0f;
+constant float cellPredictionIntensity = 6.0f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
 constant float localActivity = 4.0f;
@@ -135,7 +135,7 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 
 	float output = -sum;// * width;
 
-	write_imagef(columnActivations, columnPosition, (float4)(output, sum, output, output));
+	write_imagef(columnActivations, columnPosition, (float4)(output, sum, 0.0f, 0.0f));
 }
 
 void kernel layerColumnInhibit(read_only image2d_t columnActivations, read_only image2d_t columnDutyCyclesPrev, write_only image2d_t columnStates, int2 layerSize, float2 layerSizeInv, int2 receptiveFieldRadius) {
@@ -154,7 +154,7 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, read_only 
 		if (layerPosition.x >= 0 && layerPosition.x < layerSize.x && layerPosition.y >= 0 && layerPosition.y < layerSize.y) {
 			float activation = read_imagef(columnActivations, layerPosition).x;
 			
-			if (activation > thisActivation)
+			if (activation >= thisActivation)
 				higherSum += 1.0f;//activation - thisActivation;
 				
 			minimum = fmin(minimum, activation);
@@ -309,7 +309,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 					
 					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
 					
-					float newCellWeight = cellWeightPrev.x + alpha * cellWeightPrev.y;
+					float newCellWeight = cellWeightPrev.x + alpha * newTrace;
 					
 					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newTrace, 0.0f, 0.0f));
 					
@@ -330,7 +330,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 				
 				float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
 				
-				float newCellWeight = cellWeightPrev.x + alpha * cellWeightPrev.y;
+				float newCellWeight = cellWeightPrev.x + alpha * newTrace;
 				
 				write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newTrace, 0.0f, 0.0f));
 					
@@ -380,7 +380,7 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 					
 					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
 					
-					float newCellWeight = cellWeightPrev.x + alpha * cellWeightPrev.y;
+					float newCellWeight = cellWeightPrev.x + alpha * newTrace;
 					
 					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newTrace, 0.0f, 0.0f));
 					
@@ -557,7 +557,7 @@ void kernel reconstructInput(read_only image3d_t reconstructionWeights, read_onl
 		
 	sum += bias;
 
-	float output = fmin(1.0f, fmax(0.0f, sum));
+	float output = sum;
 	
 	write_imagef(inputs, inputPosition, (float4)(output, output, output, output));
 }
