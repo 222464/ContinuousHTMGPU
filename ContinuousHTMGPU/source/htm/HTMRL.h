@@ -17,13 +17,14 @@ namespace htm {
 	class HTMRL {
 	public:
 		enum InputType {
-			_state, _action, _q
+			_state, _action
 		};
 
 		struct LayerDesc {
 			int _width, _height;
 
 			int _receptiveFieldRadius;
+			int _nodeFieldRadius;
 			int _lateralConnectionRadius;
 			int _inhibitionRadius;
 
@@ -32,7 +33,7 @@ namespace htm {
 			float _qInfluenceMultiplier;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(5), _lateralConnectionRadius(5), _inhibitionRadius(5), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
+				: _width(16), _height(16), _receptiveFieldRadius(5), _nodeFieldRadius(5), _lateralConnectionRadius(5), _inhibitionRadius(5), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
 			{}
 		};
 
@@ -64,6 +65,16 @@ namespace htm {
 
 			cl::Image3D _cellPredictionsPrev;
 			cl::Image3D _cellPredictions;
+
+			// Nodes are like neurons in a conventional neural network
+			cl::Image3D _nodeOutputs;
+			cl::Image3D _nodeErrors;
+
+			cl::Image3D _nodeBiasesPrev;
+			cl::Image3D _nodeBiases;
+
+			cl::Image3D _nodeWeightsPrev;
+			cl::Image3D _nodeWeights;
 		};
 
 		int _inputWidth, _inputHeight;
@@ -82,15 +93,14 @@ namespace htm {
 		cl::Kernel _layerColumnWeightUpdateKernel;
 		cl::Kernel _layerColumnPredictionKernel;
 
-		cl::Kernel _reconstructInputKernel;
-		cl::Kernel _learnReconstructionKernel;
+		// For nodes
+		cl::Kernel _layerNodeActivateKernel;
+		cl::Kernel _layerNodeActivateFirstKernel;
+		cl::Kernel _weighOutputKernel;
 
 		std::vector<float> _input;
 
 		std::vector<InputType> _inputTypes;
-
-		AnythingEncoder _qEncoder;
-		std::vector<int> _qInputIndices;
 
 		std::vector<float> _output;
 		std::vector<float> _exploratoryOutput;
@@ -98,7 +108,6 @@ namespace htm {
 		std::vector<float> _prevOutputExploratory;
 		std::vector<float> _prevInput;
 
-		float _qBias;
 		float _prevMaxQ;
 		float _prevValue;
 		float _prevPrevValue;
@@ -107,12 +116,12 @@ namespace htm {
 
 		cl::Image2D _inputImage;
 
-		cl::Image3D _reconstructionWeightsPrev;
-		cl::Image3D _reconstructionWeights;
+		cl::Image3D _outputWeightsPrev;
+		cl::Image3D _outputWeights;
 
-		cl::Image2D _reconstruction;
+		cl::Image2D _partialSums;
 
-		int _reconstructionReceptiveRadius;
+		float _outputBias;
 
 		void stepBegin();
 
@@ -124,18 +133,11 @@ namespace htm {
 
 		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, unsigned long seed);
 
-		void getReconstruction(std::vector<float> &reconstruction, sys::ComputeSystem &cs);
-		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
-
-		void learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlpha);
-
 		void dutyCycleUpdate(sys::ComputeSystem &cs, float activationDutyCycleDecay, float stateDutyCycleDecay);
 
-		float retrieveQ(const std::vector<float> &sdr);
-		void setQ(std::vector<float> &sdr, float q, float localActivity, float outputIntensity, float dutyCycleDecay);
-		void learnQEncoder(float q, float prevQ, float centerAlpha, float widthAlpha, float widthScalar, float minWidth, float reconAlpha, float boostThreshold, float boostIntensity);
+		float getQ(sys::ComputeSystem &cs);
 
-		void initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, int inputWidth, int inputHeight, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
+		void initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, cl::Kernel &initPartThreeKernel, int inputWidth, int inputHeight, int inputCellsPerColumn, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
 		void activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
 		void predictLayer(sys::ComputeSystem &cs, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
 		void predictLayerLast(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
@@ -145,8 +147,11 @@ namespace htm {
 		void learnLayerTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellWeightEligibilityDecay, std::mt19937 &generator);
 		void learnLayerSpatialTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, std::mt19937 &generator);
 		void learnLayerSpatialTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, std::mt19937 &generator);
-		void updateLayerQWeights(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, float tdError, float cellQWeightEligibilityDecay);
 		void dutyCycleLayerUpdate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, float activationDutyCycleDecay, float stateDutyCycleDecay);
+		
+		// Node functions
+		void layerNodeActivate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, const LayerDesc &inputDesc, cl::Image3D &inputImage);
+		void layerNodeActivateFirst(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, cl::Image2D &inputImage);
 
 	public:
 		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, float minEncoderInitCenter, float maxEncoderInitCenter, float minEncoderInitWidth, float maxEncoderInitWidth, float minEncoderInitWeight, float maxEncoderInitWeight, std::mt19937 &generator);
