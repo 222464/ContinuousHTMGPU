@@ -668,7 +668,7 @@ void kernel weighOutput(read_only image3d_t statesInput, read_only image3d_t wei
 	write_imagef(partialSums, columnPosition, (float4)(partialSum, partialSum, partialSum, partialSum));
 }
 
-void kernel layerBackpropagateLast(read_only image3d_t weights, read_only image3d_t lastLayerNodeOutputs, read_only image3d_t lastLayerCellStates, write_only image3d_t lastLayerNodeErrors, int cellsPerColumn, float qError) {
+void kernel layerNodeBackpropagateLast(read_only image3d_t weights, read_only image3d_t lastLayerNodeOutputs, read_only image3d_t lastLayerCellStates, write_only image3d_t lastLayerNodeErrors, int cellsPerColumn, float qError) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
 	for (int ci = 0; ci < cellsPerColumn; ci++) {
@@ -682,8 +682,8 @@ void kernel layerBackpropagateLast(read_only image3d_t weights, read_only image3
 	}
 }
 
-void kernel layerBackpropagate(read_only image3d nextLayerNodeErrors, read_only image3d_t nextLayerNodeWeights, read_only image3d_t nodeOutputs, read_only image3d_t cellStates, write_only image3d_t nodeErrors,
-	int cellsPerColumn, float2 layerSizeInv, int2 nextLayerSize, int nextLayerCellsPerColumn, int2 reverseNodeFieldSize, int2 nextLayerReceptiveSize, float2 nextLayerOverThisReceptiveSize)
+void kernel layerNodeBackpropagate(read_only image3d nextLayerNodeErrors, read_only image3d_t nextLayerNodeWeights, read_only image3d_t nodeOutputs, read_only image3d_t cellStates, write_only image3d_t nodeErrors,
+	int cellsPerColumn, float2 layerSizeInv, int2 nextLayerSize, int nextLayerCellsPerColumn, int2 reverseNodeFieldSize, int2 nextLayerReceptiveSize, float2 nextOverReverseNodeFieldSize)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 centerPositionNormalized = (float2)(columnPosition.x * layerSizeInv.x, columnPosition.y * layerSizeInv.y);
@@ -701,7 +701,7 @@ void kernel layerBackpropagate(read_only image3d nextLayerNodeErrors, read_only 
 					float nodeError = read_imagef(nextLayerNodeErrors, (int4)(nextColumnPosition.x, nextColumnPosition.y, cio, 0)).x;
 				
 					int weightSecondCoordinate = cio + nextColumnPosition.y * nextLayerCellsPerColumn;
-					int weightThirdCoordinate = ci * cellsPerColumn + (reverseNodeFieldSize.y - dy) * nextLayerOverThisReceptiveSize.y * cellsPerColumn + (reverseNodeFieldSize.x - dx) * nextLayerOverThisReceptiveSize.x * cellsPerColumn * nextLayerReceptiveSize.y;
+					int weightThirdCoordinate = ci * cellsPerColumn + (reverseNodeFieldSize.y - dy) * nextOverReverseNodeFieldSize.y * cellsPerColumn + (reverseNodeFieldSize.x - dx) * nextOverReverseNodeFieldSize.x * cellsPerColumn * nextLayerReceptiveSize.y;
 				
 					int4 weightCoord = (int4)(nextColumnPosition.x, weightSecondCoordinate, weightThirdCoordinate);
 					
@@ -720,8 +720,8 @@ void kernel layerBackpropagate(read_only image3d nextLayerNodeErrors, read_only 
 	}
 }
 
-void kernel layerBackpropagateToInput(read_only image3d nextLayerNodeErrors, read_only image3d_t nextLayerNodeWeights, read_only image3d_t nodeOutputs, read_only image2d_t inputs, write_only image2d_t inputErrors,
-	int cellsPerColumn, float2 layerSizeInv, int2 nextLayerSize, int nextLayerCellsPerColumn, int2 reverseNodeFieldSize, int2 nextLayerReceptiveSize, float2 nextLayerOverThisReceptiveSize)
+void kernel layerNodeBackpropagateToInput(read_only image3d nextLayerNodeErrors, read_only image3d_t nextLayerNodeWeights, read_only image2d_t inputs, write_only image2d_t inputErrors,
+	float2 layerSizeInv, int2 nextLayerSize, int nextLayerCellsPerColumn, int2 reverseNodeFieldSize, int2 nextLayerReceptiveSize, float2 nextOverReverseNodeFieldSize)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 centerPositionNormalized = (float2)(columnPosition.x * layerSizeInv.x, columnPosition.y * layerSizeInv.y);
@@ -738,7 +738,7 @@ void kernel layerBackpropagateToInput(read_only image3d nextLayerNodeErrors, rea
 				float nodeError = read_imagef(nextLayerNodeErrors, (int4)(nextColumnPosition.x, nextColumnPosition.y, cio, 0)).x;
 			
 				int weightSecondCoordinate = cio + nextColumnPosition.y * nextLayerCellsPerColumn;
-				int weightThirdCoordinate = (reverseNodeFieldSize.y - dy) * nextLayerOverThisReceptiveSize.y + (reverseNodeFieldSize.x - dx) * nextLayerOverThisReceptiveSize.x * nextLayerReceptiveSize.y;
+				int weightThirdCoordinate = (reverseNodeFieldSize.y - dy) * nextOverReverseNodeFieldSize.y + (reverseNodeFieldSize.x - dx) * nextOverReverseNodeFieldSize.x * nextLayerReceptiveSize.y;
 				
 				int4 weightCoord = (int4)(nextColumnPosition.x, weightSecondCoordinate, weightThirdCoordinate);
 				

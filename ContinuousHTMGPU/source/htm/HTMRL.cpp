@@ -115,6 +115,8 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	}
 
 	_partialSums = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs.back()._width, _layerDescs.back()._height);
+	
+	_inputErrors = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _inputWidth, _inputHeight);
 
 	_layerColumnActivateKernel = cl::Kernel(program.getProgram(), "layerColumnActivate");
 	_layerColumnInhibitKernel = cl::Kernel(program.getProgram(), "layerColumnInhibit");
@@ -130,6 +132,9 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	_layerNodeActivateKernel = cl::Kernel(program.getProgram(), "layerNodeActivate");
 	_layerNodeActivateFirstKernel = cl::Kernel(program.getProgram(), "layerNodeActivateFirst");
 	_weighOutputKernel = cl::Kernel(program.getProgram(), "weighOutput");
+	_layerNodeBackpropagateKernel = cl::Kernel(program.getProgram(), "layerNodeBackpropagate");
+	_layerNodeBackpropagateLastKernel = cl::Kernel(program.getProgram(), "layerNodeBackpropagateLast");
+	_layerNodeBackpropagateToInputKernel = cl::Kernel(program.getProgram(), "layerNodeBackpropagateToInput");
 }
 
 void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, cl::Kernel &initPartThreeKernel, int inputWidth, int inputHeight, int inputCellsPerColumn, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator) {
@@ -1261,6 +1266,115 @@ float HTMRL::getQ(sys::ComputeSystem &cs) {
 		totalSum += partialSums[i];
 
 	return totalSum;
+}
+
+void HTMRL::layerNodeBackpropagate(sys::ComputeSystem &cs, Layer &layer, Layer &nextLayer, const LayerDesc &layerDesc, const LayerDesc &nextDesc) {
+	struct Int2 {
+		int _x, _y;
+	};
+
+	struct Float2 {
+		float _x, _y;
+	};
+
+	Float2 layerSizeInv;
+	layerSizeInv._x = 1.0f / layerDesc._width;
+	layerSizeInv._y = 1.0f / layerDesc._height;
+
+	Int2 nextLayerSize;
+	nextLayerSize._x = nextDesc._width;
+	nextLayerSize._y = nextDesc._height;
+
+	Int2 reverseNodeFieldSize;
+	reverseNodeFieldSize._x = static_cast<float>(nextDesc._width) / layerDesc._width * nextDesc._receptiveFieldRadius;
+	reverseNodeFieldSize._y = static_cast<float>(nextDesc._height) / layerDesc._height * nextDesc._receptiveFieldRadius;
+
+	Int2 nextNodeFieldSize;
+	nextNodeFieldSize._x = nextNodeFieldSize._y = nextDesc._receptiveFieldRadius;
+
+	Float2 nextOverReverseNodeFieldSize;
+	nextOverReverseNodeFieldSize._x = static_cast<float>(nextDesc._receptiveFieldRadius) / reverseNodeFieldSize._x;
+	nextOverReverseNodeFieldSize._y = static_cast<float>(nextDesc._receptiveFieldRadius) / reverseNodeFieldSize._y;
+
+	_layerNodeBackpropagateKernel.setArg(0, nextLayer._nodeErrors);
+	_layerNodeBackpropagateKernel.setArg(1, nextLayer._nodeWeights);
+	_layerNodeBackpropagateKernel.setArg(2, layer._nodeOutputs);
+	_layerNodeBackpropagateKernel.setArg(3, layer._cellStates);
+	_layerNodeBackpropagateKernel.setArg(4, layer._nodeErrors);
+	_layerNodeBackpropagateKernel.setArg(5, layerDesc._cellsInColumn);
+	_layerNodeBackpropagateKernel.setArg(6, layerSizeInv);
+	_layerNodeBackpropagateKernel.setArg(7, nextLayerSize);
+	_layerNodeBackpropagateKernel.setArg(8, nextDesc._cellsInColumn);
+	_layerNodeBackpropagateKernel.setArg(9, reverseNodeFieldSize);
+	_layerNodeBackpropagateKernel.setArg(10, nextNodeFieldSize);
+	_layerNodeBackpropagateKernel.setArg(11, nextOverReverseNodeFieldSize);
+
+	cs.getQueue().enqueueNDRangeKernel(_layerNodeBackpropagateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
+}
+
+void HTMRL::layerNodeBackpropagateLast(sys::ComputeSystem &cs, float qError) {
+	struct Int2 {
+		int _x, _y;
+	};
+
+	struct Float2 {
+		float _x, _y;
+	};
+
+	Float2 layerSizeInv;
+	layerSizeInv._x = 1.0f / _layerDescs.back()._width;
+	layerSizeInv._y = 1.0f / _layerDescs.back()._height;
+
+	_layerNodeBackpropagateLastKernel.setArg(0, _outputWeights);
+	_layerNodeBackpropagateLastKernel.setArg(1, _layers.back()._nodeOutputs);
+	_layerNodeBackpropagateLastKernel.setArg(2, _layers.back()._cellStates);
+	_layerNodeBackpropagateLastKernel.setArg(3, _layers.back()._nodeErrors);
+	_layerNodeBackpropagateLastKernel.setArg(4, _layerDescs.back()._cellsInColumn);
+	_layerNodeBackpropagateLastKernel.setArg(5, qError);
+
+	cs.getQueue().enqueueNDRangeKernel(_layerNodeBackpropagateLastKernel, cl::NullRange, cl::NDRange(_layerDescs.back()._width, _layerDescs.back()._height));
+}
+
+void HTMRL::layerNodeBackpropagateToInput(sys::ComputeSystem &cs) {
+	struct Int2 {
+		int _x, _y;
+	};
+
+	struct Float2 {
+		float _x, _y;
+	};
+
+	Float2 inputSizeInv;
+	inputSizeInv._x = 1.0f / _inputWidth;
+	inputSizeInv._y = 1.0f / _inputHeight;
+
+	Int2 nextLayerSize;
+	nextLayerSize._x = _layerDescs.front()._width;
+	nextLayerSize._y = _layerDescs.front()._height;
+
+	Int2 reverseNodeFieldSize;
+	reverseNodeFieldSize._x = static_cast<float>(_layerDescs.front()._width) / _inputWidth * _layerDescs.front()._receptiveFieldRadius;
+	reverseNodeFieldSize._y = static_cast<float>(_layerDescs.front()._height) / _inputHeight * _layerDescs.front()._receptiveFieldRadius;
+
+	Int2 nextNodeFieldSize;
+	nextNodeFieldSize._x = nextNodeFieldSize._y = _layerDescs.front()._receptiveFieldRadius;
+
+	Float2 nextOverReverseNodeFieldSize;
+	nextOverReverseNodeFieldSize._x = static_cast<float>(_layerDescs.front()._receptiveFieldRadius) / reverseNodeFieldSize._x;
+	nextOverReverseNodeFieldSize._y = static_cast<float>(_layerDescs.front()._receptiveFieldRadius) / reverseNodeFieldSize._y;
+
+	_layerNodeBackpropagateToInputKernel.setArg(0, _layers.front()._nodeErrors);
+	_layerNodeBackpropagateToInputKernel.setArg(1, _layers.front()._nodeWeights);
+	_layerNodeBackpropagateToInputKernel.setArg(2, _inputImage);
+	_layerNodeBackpropagateToInputKernel.setArg(3, _inputErrors);
+	_layerNodeBackpropagateToInputKernel.setArg(6, inputSizeInv);
+	_layerNodeBackpropagateToInputKernel.setArg(7, nextLayerSize);
+	_layerNodeBackpropagateToInputKernel.setArg(8, _layerDescs.front()._cellsInColumn);
+	_layerNodeBackpropagateToInputKernel.setArg(9, reverseNodeFieldSize);
+	_layerNodeBackpropagateToInputKernel.setArg(10, nextNodeFieldSize);
+	_layerNodeBackpropagateToInputKernel.setArg(11, nextOverReverseNodeFieldSize);
+
+	cs.getQueue().enqueueNDRangeKernel(_layerNodeBackpropagateToInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
 }
 
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, float annealingStdDev, float annealingIterations, float annealingBreakChance, float annealingDecay, float annealingMomentum, float encoderLocalActivity, float encoderOutputIntensity, float encoderDutyCycleDecay, float encoderBoostThreshold, float encoderBoostIntensity, float encoderCenterAlpha, float encoderWidthAlpha, float encoderWidthScalar, float encoderMinWidth, float encoderReconAlpha, float learnIntensity, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, std::mt19937 &generator) {
