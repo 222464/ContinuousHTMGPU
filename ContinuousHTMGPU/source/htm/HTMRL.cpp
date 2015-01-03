@@ -80,8 +80,8 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 		prevCellsPerColumn = _layerDescs[l]._cellsInColumn;
 	}
 
-	_outputWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs.back()._width, _layerDescs.back()._height, _layerDescs.back()._cellsInColumn);
-	_outputWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _layerDescs.back()._width, _layerDescs.back()._height, _layerDescs.back()._cellsInColumn);
+	_outputWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs.back()._width, _layerDescs.back()._height, _layerDescs.back()._cellsInColumn);
+	_outputWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _layerDescs.back()._width, _layerDescs.back()._height, _layerDescs.back()._cellsInColumn);
 
 	std::uniform_int_distribution<int> uniformDist(0, 10000);
 
@@ -1332,6 +1332,8 @@ void HTMRL::nodeLearn(sys::ComputeSystem &cs, float qError, float alpha, float e
 		layerNodeWeightUpdate(cs, _layers[l], _layerDescs[l], _layerDescs[l - 1], _layers[l - 1]._nodeOutputs, alpha, eligibilityDecay);
 
 	layerNodeActivateFirst(cs, _layers.front(), _layerDescs.front(), _inputImage);
+
+	_outputBias += alpha * qError;
 }
 
 void HTMRL::layerNodeBackpropagate(sys::ComputeSystem &cs, Layer &layer, Layer &nextLayer, const LayerDesc &layerDesc, const LayerDesc &nextDesc) {
@@ -1433,12 +1435,12 @@ void HTMRL::layerNodeBackpropagateToInput(sys::ComputeSystem &cs) {
 	_layerNodeBackpropagateToInputKernel.setArg(1, _layers.front()._nodeWeights);
 	_layerNodeBackpropagateToInputKernel.setArg(2, _inputImage);
 	_layerNodeBackpropagateToInputKernel.setArg(3, _inputErrors);
-	_layerNodeBackpropagateToInputKernel.setArg(6, inputSizeInv);
-	_layerNodeBackpropagateToInputKernel.setArg(7, nextLayerSize);
-	_layerNodeBackpropagateToInputKernel.setArg(8, _layerDescs.front()._cellsInColumn);
-	_layerNodeBackpropagateToInputKernel.setArg(9, reverseNodeFieldSize);
-	_layerNodeBackpropagateToInputKernel.setArg(10, nextNodeFieldSize);
-	_layerNodeBackpropagateToInputKernel.setArg(11, nextOverReverseNodeFieldSize);
+	_layerNodeBackpropagateToInputKernel.setArg(4, inputSizeInv);
+	_layerNodeBackpropagateToInputKernel.setArg(5, nextLayerSize);
+	_layerNodeBackpropagateToInputKernel.setArg(6, _layerDescs.front()._cellsInColumn);
+	_layerNodeBackpropagateToInputKernel.setArg(7, reverseNodeFieldSize);
+	_layerNodeBackpropagateToInputKernel.setArg(8, nextNodeFieldSize);
+	_layerNodeBackpropagateToInputKernel.setArg(9, nextOverReverseNodeFieldSize);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerNodeBackpropagateToInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
 }
@@ -1583,6 +1585,10 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float nodeAlpha, float no
 
 	float q = _prevValue + tdError;
 
+	std::cout << q << " " << tdError << std::endl;
+
+	backpropagate(cs, tdError);
+
 	nodeLearn(cs, tdError, nodeAlpha, nodeEligibilityDecay);
 
 	_prevOutput = _output;
@@ -1658,7 +1664,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 
 			color = c;
 
-			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _output[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
+			color.a = std::min<float>(1.0f, std::max<float>(0.0f, _exploratoryOutput[x + y * _inputWidth])) * (255.0f - 3.0f) + 3;
 
 			image->setPixel(x - _inputWidth / 2 + maxWidth / 2, y - _inputHeight / 2 + maxHeight / 2, color);
 		}
@@ -1666,7 +1672,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		images.push_back(image);
 	}
 	
-	/*for (int l = 0; l < _layers.size(); l++) {
+	for (int l = 0; l < _layers.size(); l++) {
 		std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn);
 
 		cl::size_t<3> origin;
@@ -1679,7 +1685,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		region[1] = _layerDescs[l]._height;
 		region[2] = _layerDescs[l]._cellsInColumn;
 
-		cs.getQueue().enqueueReadImage(_layers[l]._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cs.getQueue().enqueueReadImage(_layers[l]._nodeErrors, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
@@ -1710,5 +1716,5 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 
 			images.push_back(image);
 		}
-	}*/
+	}
 }

@@ -24,7 +24,9 @@ bool ComputeSystem::create(DeviceType type, bool createFromGLContext) {
 
 	_platform = allPlatforms.front();
 
+#ifdef SYS_DEBUG
 	std::cout << "Using platform: " << _platform.getInfo<CL_PLATFORM_NAME>() << std::endl;
+#endif
 
 	std::vector<cl::Device> allDevices;
 
