@@ -1530,7 +1530,7 @@ void HTMRL::layerNodeWeightUpdateLast(sys::ComputeSystem &cs, float qError, floa
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float nodeAlpha, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, std::mt19937 &generator) {
 	stepBegin();
 
-	std::uniform_real_distribution<int> seedDist(0, 10000);
+	std::uniform_int_distribution<int> seedDist(0, 10000);
 
 	unsigned long seed = seedDist(generator);
 
