@@ -100,6 +100,8 @@ namespace htm {
 		cl::Kernel _layerNodeBackpropagateKernel;
 		cl::Kernel _layerNodeBackpropagateLastKernel;
 		cl::Kernel _layerNodeBackpropagateToInputKernel;
+		cl::Kernel _layerNodeWeightUpdateKernel;
+		cl::Kernel _layerNodeWeightUpdateFirstKernel;
 
 		std::vector<float> _input;
 
@@ -159,6 +161,8 @@ namespace htm {
 		void layerNodeBackpropagate(sys::ComputeSystem &cs, Layer &layer, Layer &nextLayer, const LayerDesc &layerDesc, const LayerDesc &nextDesc);
 		void layerNodeBackpropagateLast(sys::ComputeSystem &cs, float qError);
 		void layerNodeBackpropagateToInput(sys::ComputeSystem &cs);
+		void layerNodeWeightUpdate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, const LayerDesc &inputDesc, cl::Image3D &inputImage, float alpha);
+		void layerNodeWeightUpdateFirst(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, cl::Image2D &inputImage, float alpha);
 
 	public:
 		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, float minEncoderInitCenter, float maxEncoderInitCenter, float minEncoderInitWidth, float maxEncoderInitWidth, float minEncoderInitWeight, float maxEncoderInitWeight, std::mt19937 &generator);

@@ -135,6 +135,8 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	_layerNodeBackpropagateKernel = cl::Kernel(program.getProgram(), "layerNodeBackpropagate");
 	_layerNodeBackpropagateLastKernel = cl::Kernel(program.getProgram(), "layerNodeBackpropagateLast");
 	_layerNodeBackpropagateToInputKernel = cl::Kernel(program.getProgram(), "layerNodeBackpropagateToInput");
+	_layerNodeWeightUpdateKernel = cl::Kernel(program.getProgram(), "layerNodeWeightUpdate");
+	_layerNodeWeightUpdateFirstKernel = cl::Kernel(program.getProgram(), "layerNodeWeightUpdateFirst");
 }
 
 void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, cl::Kernel &initPartThreeKernel, int inputWidth, int inputHeight, int inputCellsPerColumn, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator) {
@@ -1375,6 +1377,77 @@ void HTMRL::layerNodeBackpropagateToInput(sys::ComputeSystem &cs) {
 	_layerNodeBackpropagateToInputKernel.setArg(11, nextOverReverseNodeFieldSize);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerNodeBackpropagateToInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
+}
+
+void HTMRL::layerNodeWeightUpdate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, const LayerDesc &inputDesc, cl::Image3D &inputImage, float alpha) {
+	struct Int2 {
+		int _x, _y;
+	};
+
+	struct Float2 {
+		float _x, _y;
+	};
+
+	Int2 nodeFieldRadius;
+	nodeFieldRadius._x = nodeFieldRadius._y = layerDesc._nodeFieldRadius;
+
+	Float2 layerSizeInv;
+	layerSizeInv._x = 1.0f / layerDesc._width;
+	layerSizeInv._y = 1.0f / layerDesc._height;
+
+	Int2 inputSize;
+	inputSize._x = inputDesc._width;
+	inputSize._y = inputDesc._height;
+
+	_layerNodeWeightUpdateKernel.setArg(0, layer._nodeErrors);
+	_layerNodeWeightUpdateKernel.setArg(1, inputImage);
+	_layerNodeWeightUpdateKernel.setArg(2, layer._nodeBiasesPrev);
+	_layerNodeWeightUpdateKernel.setArg(3, layer._nodeWeightsPrev);
+	_layerNodeWeightUpdateKernel.setArg(4, layer._nodeBiases);
+	_layerNodeWeightUpdateKernel.setArg(5, layer._nodeWeights);
+	_layerNodeWeightUpdateKernel.setArg(6, layerDesc._cellsInColumn);
+	_layerNodeWeightUpdateKernel.setArg(7, inputDesc._cellsInColumn);
+	_layerNodeWeightUpdateKernel.setArg(8, nodeFieldRadius);
+	_layerNodeWeightUpdateKernel.setArg(9, layerSizeInv);
+	_layerNodeWeightUpdateKernel.setArg(10, inputSize);
+	_layerNodeWeightUpdateKernel.setArg(11, alpha);
+
+	cs.getQueue().enqueueNDRangeKernel(_layerNodeWeightUpdateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
+}
+
+void HTMRL::layerNodeWeightUpdateFirst(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, cl::Image2D &inputImage, float alpha) {
+	struct Int2 {
+		int _x, _y;
+	};
+
+	struct Float2 {
+		float _x, _y;
+	};
+
+	Int2 nodeFieldRadius;
+	nodeFieldRadius._x = nodeFieldRadius._y = layerDesc._nodeFieldRadius;
+
+	Float2 layerSizeInv;
+	layerSizeInv._x = 1.0f / layerDesc._width;
+	layerSizeInv._y = 1.0f / layerDesc._height;
+
+	Int2 inputSize;
+	inputSize._x = _inputWidth;
+	inputSize._y = _inputHeight;
+
+	_layerNodeWeightUpdateFirstKernel.setArg(0, layer._nodeErrors);
+	_layerNodeWeightUpdateFirstKernel.setArg(1, inputImage);
+	_layerNodeWeightUpdateFirstKernel.setArg(2, layer._nodeBiasesPrev);
+	_layerNodeWeightUpdateFirstKernel.setArg(3, layer._nodeWeightsPrev);
+	_layerNodeWeightUpdateFirstKernel.setArg(4, layer._nodeBiases);
+	_layerNodeWeightUpdateFirstKernel.setArg(5, layer._nodeWeights);
+	_layerNodeWeightUpdateFirstKernel.setArg(6, layerDesc._cellsInColumn);
+	_layerNodeWeightUpdateFirstKernel.setArg(7, nodeFieldRadius);
+	_layerNodeWeightUpdateFirstKernel.setArg(8, layerSizeInv);
+	_layerNodeWeightUpdateFirstKernel.setArg(9, inputSize);
+	_layerNodeWeightUpdateFirstKernel.setArg(10, alpha);
+
+	cs.getQueue().enqueueNDRangeKernel(_layerNodeWeightUpdateFirstKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 }
 
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, float annealingStdDev, float annealingIterations, float annealingBreakChance, float annealingDecay, float annealingMomentum, float encoderLocalActivity, float encoderOutputIntensity, float encoderDutyCycleDecay, float encoderBoostThreshold, float encoderBoostIntensity, float encoderCenterAlpha, float encoderWidthAlpha, float encoderWidthScalar, float encoderMinWidth, float encoderReconAlpha, float learnIntensity, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, std::mt19937 &generator) {
