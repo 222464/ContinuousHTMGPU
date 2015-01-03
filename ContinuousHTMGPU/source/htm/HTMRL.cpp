@@ -237,7 +237,7 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 	initPartThreeKernel.setArg(2, layer._nodeBiases);
 	initPartThreeKernel.setArg(3, layer._nodeWeights);
 	initPartThreeKernel.setArg(4, layerDesc._cellsInColumn);
-	initPartThreeKernel.setArg(5, receptiveFieldSize);
+	initPartThreeKernel.setArg(5, nodeConnectionsSize);
 	initPartThreeKernel.setArg(6, lateralConnectionsSize);
 	initPartThreeKernel.setArg(7, seed3);
 	initPartThreeKernel.setArg(8, minInitWeight);
@@ -1331,7 +1331,7 @@ void HTMRL::nodeLearn(sys::ComputeSystem &cs, float qError, float alpha, float e
 	for (int l = _layers.size() - 2; l >= 1; l--)
 		layerNodeWeightUpdate(cs, _layers[l], _layerDescs[l], _layerDescs[l - 1], _layers[l - 1]._nodeOutputs, alpha, eligibilityDecay);
 
-	layerNodeActivateFirst(cs, _layers.front(), _layerDescs.front(), _inputImage);
+	layerNodeWeightUpdateFirst(cs, _layers.front(), _layerDescs.front(), _inputImage, alpha, eligibilityDecay);
 
 	_outputBias += alpha * qError;
 }
@@ -1531,6 +1531,10 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float nodeAlpha, float no
 
 	learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, cellConnectionAlpha, 1.0f, seed + 1);
 
+	for (int j = 0; j < _output.size(); j++)
+	if (_inputTypes[j] == _action)
+		_output[j] = std::min<float>(1.0f, std::max<float>(-1.0f, _output[j]));
+
 	// Derive max Q action
 	nodeActivate(_output, cs);
 
@@ -1668,7 +1672,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 	}
 	
 	for (int l = 0; l < _layers.size(); l++) {
-		std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn * 2);
+		std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn);
 
 		cl::size_t<3> origin;
 		origin[0] = 0;
@@ -1680,7 +1684,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		region[1] = _layerDescs[l]._height;
 		region[2] = _layerDescs[l]._cellsInColumn;
 
-		cs.getQueue().enqueueReadImage(_layers[l]._nodeOutputs, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cs.getQueue().enqueueReadImage(_layers[l]._nodeErrors, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
@@ -1699,7 +1703,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 
 				color = c;
 
-				color.a = std::min<float>(1.0f, std::max<float>(0.0f, state[2 * (ci + x * _layerDescs[l]._cellsInColumn + y * _layerDescs[l]._width * _layerDescs[l]._cellsInColumn) + 1])) * (255.0f - 3.0f) + 3;
+				color.a = std::min<float>(1.0f, std::max<float>(0.0f, state[(ci + x * _layerDescs[l]._cellsInColumn + y * _layerDescs[l]._width * _layerDescs[l]._cellsInColumn)] * 0.5f + 0.5f)) * (255.0f - 3.0f) + 3;
 
 				int wx = x - _layerDescs[l]._width / 2 + maxWidth / 2;
 				int wy = y - _layerDescs[l]._height / 2 + maxHeight / 2;

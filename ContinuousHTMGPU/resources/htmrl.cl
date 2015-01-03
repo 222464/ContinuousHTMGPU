@@ -117,7 +117,7 @@ void kernel initializePartThree(write_only image3d_t nodeOutputs, write_only ima
 		
 		float biasWeight = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
 
-		write_imagef(nodeBiases, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(biasWeight, biasWeight, biasWeight, biasWeight));
+		write_imagef(nodeBiases, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(biasWeight, 0.0f, 0.0f, 0.0f));
 		
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
 	
@@ -126,7 +126,7 @@ void kernel initializePartThree(write_only image3d_t nodeOutputs, write_only ima
 		
 			float weight = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
 	
-			write_imagef(nodeWeights, weightPosition, (float4)(weight, weight, weight, weight));
+			write_imagef(nodeWeights, weightPosition, (float4)(weight, 0.0f, 0.0f, 0.0f));
 		}
 	}
 }
@@ -576,7 +576,7 @@ void kernel layerNodeActivate(read_only image3d_t nodeStatesInput, read_only ima
 			
 			if (connectionCoords.x >= 0 && connectionCoords.x < inputSize.x && connectionCoords.y >= 0 && connectionCoords.y < inputSize.y) {	
 				for (int cio = 0; cio < inputCellsPerColumn; cio++) {
-					int weightCoord = ci + (nodeFieldRadius.y - dy) * cellsInColumn + (nodeFieldRadius.x - dx) * cellsInColumn * (nodeFieldRadius.y * 2 + 1);
+					int weightCoord = cio + (nodeFieldRadius.y - dy) * inputCellsPerColumn + (nodeFieldRadius.x - dx) * inputCellsPerColumn * (nodeFieldRadius.y * 2 + 1);
 					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, weightCoord, 0);
 				
 					float nodeWeight = read_imagef(nodeWeights, weightPosition).x;
@@ -777,13 +777,14 @@ void kernel layerNodeWeightUpdate(read_only image3d_t layerNodeErrors, read_only
 			
 			if (connectionCoords.x >= 0 && connectionCoords.x < inputSize.x && connectionCoords.y >= 0 && connectionCoords.y < inputSize.y) {	
 				for (int cio = 0; cio < inputCellsPerColumn; cio++) {
-					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
+					int weightCoord = cio + (nodeFieldRadius.y - dy) * inputCellsPerColumn + (nodeFieldRadius.x - dx) * inputCellsPerColumn * (nodeFieldRadius.y * 2 + 1);
+					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, weightCoord, 0);
 				
 					float2 nodeWeightPrev = read_imagef(nodeWeightsPrev, weightPosition).xy;
 			
 					float connectionState = read_imagef(statesInput, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
 					
-					float2 newNodeWeight = (float2)(nodeWeightPrev.x + alphaError * nodeWeightPrev.y, (1.0f - eligibilityDecay) * (1.0f - connectionState) * nodeWeightPrev.y + connectionState);
+					float2 newNodeWeight = (float2)(nodeWeightPrev.x + alphaError * nodeWeightPrev.y, (1.0f - eligibilityDecay) * nodeWeightPrev.y + connectionState);
 					
 					write_imagef(nodeWeights, weightPosition, (float4)(newNodeWeight.x, newNodeWeight.y, 0.0f, 0.0f));
 					
@@ -823,13 +824,14 @@ void kernel layerNodeWeightUpdateFirst(read_only image3d_t layerNodeErrors, read
 			int2 connectionCoords = (int2)(inputCenterPosition.x + dx, inputCenterPosition.y + dy);
 			
 			if (connectionCoords.x >= 0 && connectionCoords.x < inputSize.x && connectionCoords.y >= 0 && connectionCoords.y < inputSize.y) {	
-				int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
+				int weightCoord = (nodeFieldRadius.y - dy) + (nodeFieldRadius.x - dx) * (nodeFieldRadius.y * 2 + 1);
+				int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, weightCoord, 0);
 			
 				float2 nodeWeightPrev = read_imagef(nodeWeightsPrev, weightPosition).xy;
 		
 				float connectionState = read_imagef(statesInput, connectionCoords).x;
 				
-				float2 newNodeWeight = (float2)(nodeWeightPrev.x + alphaError * nodeWeightPrev.y, (1.0f - eligibilityDecay) * (1.0f - connectionState) * nodeWeightPrev.y + connectionState);
+				float2 newNodeWeight = (float2)(nodeWeightPrev.x + alphaError * nodeWeightPrev.y, (1.0f - eligibilityDecay) * nodeWeightPrev.y + connectionState);
 				
 				write_imagef(nodeWeights, weightPosition, (float4)(newNodeWeight.x, newNodeWeight.y, 0.0f, 0.0f));
 			}
@@ -853,7 +855,7 @@ void kernel layerNodeWeightUpdateLast(read_only image3d_t statesInput, read_only
 		
 		float2 weightPrev = read_imagef(weightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		
-		float2 newWeight = (float2)(weightPrev.x + alphaError * weightPrev.y, (1.0f - eligibilityDecay) * (1.0f - nodeState) * weightPrev.y + nodeState);
+		float2 newWeight = (float2)(weightPrev.x + alphaError * weightPrev.y, (1.0f - eligibilityDecay) * weightPrev.y + nodeState);
 		
 		write_imagef(weights, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newWeight.x, newWeight.y, 0.0f, 0.0f));
 	}
