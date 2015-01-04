@@ -17,7 +17,7 @@ namespace htm {
 	class HTMRL {
 	public:
 		enum InputType {
-			_state, _action
+			_state, _action, _unused
 		};
 
 		struct LayerDesc {
@@ -33,7 +33,7 @@ namespace htm {
 			float _qInfluenceMultiplier;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(3), _nodeFieldRadius(3), _lateralConnectionRadius(3), _inhibitionRadius(3), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
+				: _width(16), _height(16), _receptiveFieldRadius(3), _nodeFieldRadius(4), _lateralConnectionRadius(3), _inhibitionRadius(4), _cellsInColumn(4), _qInfluenceMultiplier(1.0f)
 			{}
 		};
 
@@ -104,6 +104,10 @@ namespace htm {
 		cl::Kernel _layerNodeWeightUpdateFirstKernel;
 		cl::Kernel _layerNodeWeightUpdateLastKernel;
 
+		// For reconstruction
+		cl::Kernel _reconstructInputKernel;
+		cl::Kernel _learnReconstructionKernel;
+
 		std::vector<float> _input;
 
 		std::vector<InputType> _inputTypes;
@@ -127,6 +131,13 @@ namespace htm {
 		cl::Image3D _outputWeights;
 
 		cl::Image2D _partialSums;
+
+		int _reconstructionReceptiveRadius;
+
+		cl::Image3D _reconstructionWeightsPrev;
+		cl::Image3D _reconstructionWeights;
+
+		cl::Image2D _reconstruction;
 
 		float _outputBias;
 
@@ -169,6 +180,11 @@ namespace htm {
 		void layerNodeWeightUpdate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, const LayerDesc &inputDesc, cl::Image3D &inputImage, float alpha, float eligibilityDecay);
 		void layerNodeWeightUpdateFirst(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, cl::Image2D &inputImage, float alpha, float eligibilityDecay);
 		void layerNodeWeightUpdateLast(sys::ComputeSystem &cs, float qError, float alpha, float eligibilityDecay);
+
+		// Reconstruction
+		void getReconstruction(std::vector<float> &reconstruction, sys::ComputeSystem &cs);
+		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
+		void learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlpha);
 
 	public:
 		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, float minEncoderInitCenter, float maxEncoderInitCenter, float minEncoderInitWidth, float maxEncoderInitWidth, float minEncoderInitWeight, float maxEncoderInitWeight, std::mt19937 &generator);

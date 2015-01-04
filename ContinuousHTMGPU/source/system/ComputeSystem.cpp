@@ -44,7 +44,7 @@ bool ComputeSystem::create(DeviceType type, bool createFromGLContext) {
 
 	if (allDevices.empty()) {
 #ifdef SYS_DEBUG
-		std::cout << " No devices found. Check your OpenCL installation." << std::endl;
+		std::cout << "No devices found. Check your OpenCL installation." << std::endl;
 #endif
 		return false;
 	}
