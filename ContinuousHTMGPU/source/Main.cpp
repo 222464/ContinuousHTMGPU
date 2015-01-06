@@ -139,7 +139,7 @@ int main() {
 
 	layerDescs[0]._width = 64;
 	layerDescs[0]._height = 64;
-	layerDescs[0]._inhibitionRadius = 4;
+	layerDescs[0]._inhibitionRadius = 3;
 	layerDescs[0]._qInfluenceMultiplier = 0.2f;
 
 	//layerDescs[1]._width = 44;
@@ -149,12 +149,12 @@ int main() {
 
 	layerDescs[1]._width = 32;
 	layerDescs[1]._height = 32;
-	layerDescs[1]._inhibitionRadius = 4;
+	layerDescs[1]._inhibitionRadius = 3;
 	layerDescs[1]._qInfluenceMultiplier = 0.5f;
 
 	layerDescs[2]._width = 16;
 	layerDescs[2]._height = 16;
-	layerDescs[2]._inhibitionRadius = 4;
+	layerDescs[2]._inhibitionRadius = 3;
 	layerDescs[2]._qInfluenceMultiplier = 1.0f;
 
 	std::vector<htm::HTMRL::InputType> inputTypes(64 * 64, htm::HTMRL::_state);
@@ -174,7 +174,7 @@ int main() {
 	inputTypes[33 + 51 * 64] = htm::HTMRL::_action;
 	inputTypes[34 + 51 * 64] = htm::HTMRL::_action;
 
-	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, -0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 0.01f, 1.0f, -0.01f, 0.01f, generator);
+	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, -0.05f, 0.05f, 0.0f, 1.0f, 0.0f, 1.0f, 0.01f, 1.0f, -0.01f, 0.01f, generator);
 
 	sf::RenderTexture htmRT;
 	htmRT.create(1024, 1024, false);
@@ -239,7 +239,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.001f, 0.05f, 0.05f, 0.02f, 0.03f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.0f, 3, 1.0f, 1.0f, 0.7f, 0.993f, 0.0f, 0.05f, 0.05f, 1.0f, generator);
+		agent.step(cs, reward, 0.001f, 0.05f, 0.05f, 0.02f, 0.03f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.0f, 3, 100.0f, 100.0f, 0.5f, 0.993f, 0.0f, 0.05f, 0.05f, 1.0f, generator);
 
 		/*float output = 0.0f;
 
@@ -253,7 +253,7 @@ int main() {
 		float output = (agent.getOutput(31, 50) + agent.getOutput(32, 50) + agent.getOutput(33, 50) + agent.getOutput(34, 50) +
 			agent.getOutput(31, 51) + agent.getOutput(32, 51) + agent.getOutput(33, 51) + agent.getOutput(34, 51)) * 0.125f;
 
-		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, (output * 2.0f)));
+		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, 2.0f * (output * 2.0f - 1.0f)));
 
 		//std::cout << dir << std::endl;
 

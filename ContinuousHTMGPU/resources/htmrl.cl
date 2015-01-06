@@ -18,12 +18,12 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float columnIntensity = 1.0f;
+constant float columnIntensity = 2.0f;
 constant float cellStateIntensity = 32.0f;
 constant float cellPredictionIntensity = 1.0f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
-constant float localActivity = 2.0f;
+constant float localActivity = 4.0f;
 constant float uniquenessPower = 4.0f;
 constant float minOverlapForActivation = 0.0f;
 constant float subOverlapIncrement = 0.0005f;
@@ -797,7 +797,7 @@ void kernel layerNodeWeightUpdate(read_only image3d_t layerNodeErrors, read_only
 			
 					float connectionState = read_imagef(statesInput, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
 					
-					float2 newNodeWeight = (float2)(nodeWeightPrev.x + alpha * nodeWeightPrev.y, (1.0f - eligibilityDecay) * nodeWeightPrev.y + error * connectionState);
+					float2 newNodeWeight = (float2)(nodeWeightPrev.x + alpha * nodeWeightPrev.y, fmax((1.0f - eligibilityDecay) * nodeWeightPrev.y, error * connectionState));
 					
 					write_imagef(nodeWeights, weightPosition, (float4)(newNodeWeight.x, newNodeWeight.y, 0.0f, 0.0f));
 					
@@ -810,7 +810,7 @@ void kernel layerNodeWeightUpdate(read_only image3d_t layerNodeErrors, read_only
 		
 		float2 biasPrev = read_imagef(nodeBiasesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		
-		float2 newBias = (float2)(biasPrev.x + alpha * biasPrev.y, (1.0f - eligibilityDecay) * biasPrev.y + error);
+		float2 newBias = (float2)(biasPrev.x + alpha * biasPrev.y, fmax((1.0f - eligibilityDecay) * biasPrev.y, error));
 		
 		write_imagef(nodeBiases, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newBias.x, newBias.y, 0.0f, 0.0f));
 	}
@@ -843,7 +843,7 @@ void kernel layerNodeWeightUpdateFirst(read_only image3d_t layerNodeErrors, read
 		
 				float connectionState = read_imagef(statesInput, connectionCoords).x;
 				
-				float2 newNodeWeight = (float2)(nodeWeightPrev.x + alpha * nodeWeightPrev.y, (1.0f - eligibilityDecay) * nodeWeightPrev.y + error * connectionState);
+				float2 newNodeWeight = (float2)(nodeWeightPrev.x + alpha * nodeWeightPrev.y, fmax((1.0f - eligibilityDecay) * nodeWeightPrev.y, error * connectionState));
 				
 				write_imagef(nodeWeights, weightPosition, (float4)(newNodeWeight.x, newNodeWeight.y, 0.0f, 0.0f));
 			}
@@ -853,7 +853,7 @@ void kernel layerNodeWeightUpdateFirst(read_only image3d_t layerNodeErrors, read
 		
 		float2 biasPrev = read_imagef(nodeBiasesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		
-		float2 newBias = (float2)(biasPrev.x + alpha * biasPrev.y, (1.0f - eligibilityDecay) * biasPrev.y + error);
+		float2 newBias = (float2)(biasPrev.x + alpha * biasPrev.y, fmax((1.0f - eligibilityDecay) * biasPrev.y, error));
 		
 		write_imagef(nodeBiases, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newBias.x, newBias.y, 0.0f, 0.0f));
 	}
@@ -867,7 +867,7 @@ void kernel layerNodeWeightUpdateLast(read_only image3d_t statesInput, read_only
 		
 		float2 weightPrev = read_imagef(weightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		
-		float2 newWeight = (float2)(weightPrev.x + alpha * weightPrev.y, (1.0f - eligibilityDecay) * weightPrev.y + nodeState);
+		float2 newWeight = (float2)(weightPrev.x + alpha * weightPrev.y, fmax((1.0f - eligibilityDecay) * weightPrev.y, nodeState));
 		
 		write_imagef(weights, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newWeight.x, newWeight.y, 0.0f, 0.0f));
 	}

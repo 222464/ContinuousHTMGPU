@@ -19,7 +19,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	_inputTypes = inputTypes;
 
 	std::uniform_real_distribution<float> weightDist(minInitWeight, maxInitWeight);
-	std::uniform_real_distribution<float> actionDist(-1.0f, 1.0f);
+	std::uniform_real_distribution<float> actionDist(0.0f, 1.0f);
 
 	_outputBias = weightDist(generator);
 	_prevMaxQ = 0.0f;
@@ -1748,31 +1748,22 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 		else if (_inputTypes[i] == _unused)
 			_input[i] = 0.0f;
 
-	// Execute HTM
-	activate(_input, cs, seed);
-
-	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
-
-	learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, cellConnectionAlpha, 1.0f, seed + 1);
-
-	std::vector<float> recon;
-	getReconstructedPrediction(recon, cs);
-
 	for (int j = 0; j < _output.size(); j++)
 	if (_inputTypes[j] == _action)
-		_output[j] = std::min<float>(1.0f, std::max<float>(-1.0f, recon[j]));
+		_output[j] = std::min<float>(1.0f, std::max<float>(0.0f, _output[j]));
 	else if (_inputTypes[j] == _unused)
 		_output[j] = 0.0f;
 	else
 		_output[j] = _input[j];
 
-	getReconstruction(recon, cs);
-	learnReconstruction(cs, reconstructionAlpha);
+	// Execute HTM
+	activate(_output, cs, seed);
 
 	// Derive max Q action
 	nodeActivate(_output, cs);
 
 	std::cout << "Start" << std::endl;
+	std::cout << getQ(cs) << std::endl;
 
 	for (int i = 0; i < deriveMaxQIterations; i++) {
 		std::vector<float> suggestedInputs;
@@ -1780,8 +1771,9 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 
 		for (int j = 0; j < _output.size(); j++)
 		if (_inputTypes[j] == _action)
-			_output[j] = std::min<float>(1.0f, std::max<float>(-1.0f, _output[j] + deriveMaxQAlpha * suggestedInputs[j]));
+			_output[j] = std::min<float>(1.0f, std::max<float>(0.0f, _output[j] + deriveMaxQAlpha * suggestedInputs[j]));
 
+		activate(_output, cs, seed);
 		nodeActivate(_output, cs);
 
 		std::cout << getQ(cs) << std::endl;
@@ -1798,20 +1790,31 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 	for (int i = 0; i < _output.size(); i++)
 	if (_inputTypes[i] == _action) {
 		if (dist01(generator) < breakChance)
-			_exploratoryOutput[i] = dist01(generator) * 2.0f - 1.0f;
+			_exploratoryOutput[i] = dist01(generator);
 		else
-			_exploratoryOutput[i] = std::min<float>(1.0f, std::max<float>(-1.0f, std::min<float>(1.0f, std::max<float>(-1.0f, _output[i])) + pertDist(generator)));
+			_exploratoryOutput[i] = std::min<float>(1.0f, std::max<float>(0.0f, std::min<float>(1.0f, std::max<float>(0.0f, _output[i])) + pertDist(generator)));
 		
 		_input[i] = _exploratoryOutput[i];
 	}
 	else
 		_exploratoryOutput[i] = _input[i];
 
+	activate(_exploratoryOutput, cs, seed);
 	nodeActivate(_exploratoryOutput, cs);
+
+	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
+
+	learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, cellConnectionAlpha, 1.0f, seed + 1);
+
+	getReconstructedPrediction(_output, cs);
+
+	std::vector<float> recon;
+	getReconstruction(recon, cs);
+	learnReconstruction(cs, reconstructionAlpha);
 
 	float value = getQ(cs);
 
-	float newQ = reward + gamma * value;
+	float newQ = reward + gamma * maxQ;
 
 	float tdError = alpha * (newQ - _prevValue);
 
