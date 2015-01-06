@@ -14,7 +14,7 @@ void HTMRLVisualizer::update(sf::RenderTexture &target, const sf::Vector2f &posi
 
 	const float heightStep = 1.0f;
 	const float transparency = 0.3f;
-	const int cellLayerSteps = 4;
+	const int cellLayerSteps = 2;
 
 	int h = 0;
 

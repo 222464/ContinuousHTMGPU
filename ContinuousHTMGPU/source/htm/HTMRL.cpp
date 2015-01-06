@@ -1735,7 +1735,7 @@ void HTMRL::learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlph
 	cs.getQueue().enqueueNDRangeKernel(_learnReconstructionKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
 }
 
-void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, std::mt19937 &generator) {
+void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator) {
 	stepBegin();
 
 	std::uniform_int_distribution<int> seedDist(0, 10000);
@@ -1761,6 +1761,8 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 	for (int j = 0; j < _output.size(); j++)
 	if (_inputTypes[j] == _action)
 		_output[j] = std::min<float>(1.0f, std::max<float>(-1.0f, recon[j]));
+	else if (_inputTypes[j] == _unused)
+		_output[j] = 0.0f;
 	else
 		_output[j] = _input[j];
 
@@ -1818,6 +1820,11 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 	std::cout << q << " " << tdError << std::endl;
 
 	backpropagate(cs, 1.0f);
+
+	if (tdError > maxTdError)
+		tdError = maxTdError;
+	else if (tdError < -maxTdError)
+		tdError = -maxTdError;
 
 	nodeLearn(cs, tdError, outputAlpha, nodeEligibilityDecay);
 

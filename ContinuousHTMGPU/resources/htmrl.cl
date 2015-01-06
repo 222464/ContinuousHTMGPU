@@ -18,12 +18,12 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float columnIntensity = 0.5f;
-constant float cellStateIntensity = 2.0f;
+constant float columnIntensity = 1.0f;
+constant float cellStateIntensity = 32.0f;
 constant float cellPredictionIntensity = 1.0f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
-constant float localActivity = 8.0f;
+constant float localActivity = 2.0f;
 constant float uniquenessPower = 4.0f;
 constant float minOverlapForActivation = 0.0f;
 constant float subOverlapIncrement = 0.0005f;
@@ -33,6 +33,7 @@ constant float widthScalar = 1.0f;
 constant float minWidth = 0.0001f;
 constant float minBoostThreshold = 0.0001f;
 constant float nodeOutputIntensity = 1.0f;
+constant float rectifierLeak = 0.1f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -47,6 +48,14 @@ float randFloat(uint2* state) {
 
 float sigmoid(float x) {
 	return 1.0f / (1.0f + exp(-x));
+}
+
+float relu(float x) {
+	return log(1.0f + exp(x));
+}
+
+float rectifierDerivative(float x) {
+	return x > rectifierLeak ? 1.0f : rectifierLeak;
 }
 
 float scaledSigmoid(float x) {
@@ -605,10 +614,9 @@ void kernel layerNodeActivate(read_only image3d_t nodeStatesInput, read_only ima
 		
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		float nodeSigmoid = sigmoid(sum * nodeOutputIntensity);
-		float nodeOutput = nodeSigmoid * cellState;
+		float nodeOutput = relu(sum * nodeOutputIntensity) * cellState;
 		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, nodeSigmoid, 0.0f, 0.0f));
+		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, sigmoid(sum * nodeOutputIntensity), 0.0f, 0.0f));
 	}
 }
 
@@ -651,10 +659,9 @@ void kernel layerNodeActivateFirst(read_only image2d_t statesInput, read_only im
 		
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		float nodeSigmoid = sigmoid(sum * nodeOutputIntensity);
-		float nodeOutput = nodeSigmoid * cellState;
+		float nodeOutput = relu(sum * nodeOutputIntensity) * cellState;
 		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, nodeSigmoid, 0.0f, 0.0f));
+		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, sigmoid(sum * nodeOutputIntensity), 0.0f, 0.0f));
 	}
 }
 
@@ -681,8 +688,8 @@ void kernel layerNodeBackpropagateLast(read_only image3d_t weights, read_only im
 		float weight = read_imagef(weights, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
 		float cellState = read_imagef(lastLayerCellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		float sig = read_imagef(lastLayerNodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
-		float error = qError * weight * sig * (1.0f - sig) * cellState;
+		float deriv = read_imagef(lastLayerNodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
+		float error = qError * weight * deriv * cellState;
 		
 		write_imagef(lastLayerNodeErrors, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(error, error, error, error));
 	}
@@ -719,8 +726,8 @@ void kernel layerNodeBackpropagate(read_only image3d_t nextLayerNodeErrors, read
 		}
 	
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		float sig = read_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
-		float error = sum * sig * (1.0f - sig) * cellState;
+		float deriv = read_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
+		float error = sum * deriv * cellState;
 		
 		write_imagef(nodeErrors, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(error, error, error, error));
 	}
@@ -783,7 +790,7 @@ void kernel layerNodeWeightUpdate(read_only image3d_t layerNodeErrors, read_only
 			
 			if (connectionCoords.x >= 0 && connectionCoords.x < inputSize.x && connectionCoords.y >= 0 && connectionCoords.y < inputSize.y) {	
 				for (int cio = 0; cio < inputCellsPerColumn; cio++) {
-					int weightCoord = cio + (nodeFieldRadius.y - dy) * inputCellsPerColumn + (nodeFieldRadius.x - dx) * inputCellsPerColumn * (nodeFieldRadius.y * 2 + 1);
+					int weightCoord = cio + (nodeFieldRadius.y + dy) * inputCellsPerColumn + (nodeFieldRadius.x + dx) * inputCellsPerColumn * (nodeFieldRadius.y * 2 + 1);
 					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, weightCoord, 0);
 				
 					float2 nodeWeightPrev = read_imagef(nodeWeightsPrev, weightPosition).xy;
@@ -829,7 +836,7 @@ void kernel layerNodeWeightUpdateFirst(read_only image3d_t layerNodeErrors, read
 			int2 connectionCoords = (int2)(inputCenterPosition.x + dx, inputCenterPosition.y + dy);
 			
 			if (connectionCoords.x >= 0 && connectionCoords.x < inputSize.x && connectionCoords.y >= 0 && connectionCoords.y < inputSize.y) {	
-				int weightCoord = (nodeFieldRadius.y - dy) + (nodeFieldRadius.x - dx) * (nodeFieldRadius.y * 2 + 1);
+				int weightCoord = (nodeFieldRadius.y + dy) + (nodeFieldRadius.x + dx) * (nodeFieldRadius.y * 2 + 1);
 				int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, weightCoord, 0);
 			
 				float2 nodeWeightPrev = read_imagef(nodeWeightsPrev, weightPosition).xy;
