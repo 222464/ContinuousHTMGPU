@@ -190,9 +190,9 @@ namespace htm {
 		void learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlpha);
 
 	public:
-		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, float minEncoderInitCenter, float maxEncoderInitCenter, float minEncoderInitWidth, float maxEncoderInitWidth, float minEncoderInitWeight, float maxEncoderInitWeight, std::mt19937 &generator);
+		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, int reconstructionReceptiveRadius, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float outputAlpha, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float outputAlpha, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float deriveQMutationStdDev, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;

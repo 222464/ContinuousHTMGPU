@@ -23,12 +23,14 @@ constant float cellStateIntensity = 32.0f;
 constant float cellPredictionIntensity = 1.0f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
-constant float localActivity = 4.0f;
+constant float localActivity = 8.0f;
 constant float uniquenessPower = 4.0f;
 constant float minOverlapForActivation = 0.0f;
 constant float subOverlapIncrement = 0.0005f;
-constant float boostDutyCycleRatio = 0.01f;
+constant float boostDutyCycleRatio = 0.05f;
 constant float boostIntensity = 1.0f;
+constant float maxBoost = 1.0f;
+constant float typicalMaxActivationRatio = 0.5f;
 constant float widthScalar = 1.0f;
 constant float minWidth = 0.0001f;
 constant float minBoostThreshold = 0.0001f;
@@ -75,7 +77,7 @@ void kernel initializePartOne(write_only image2d_t columnActivations, write_only
 
 	write_imagef(columnActivations, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 	write_imagef(columnStates, columnPosition, (float4)(0.0f, 0.0f, 0.0f, 0.0f));
-	write_imagef(columnDutyCycles, columnPosition, (float4)(minOverlapForActivation, 0.0f, 0.0f, 0.0f));
+	write_imagef(columnDutyCycles, columnPosition, (float4)(randFloat(&seedValue) * (1.0f - minOverlapForActivation) + minOverlapForActivation, 0.0f, 0.0f, 0.0f));
 
 	float columnQUsage = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
 	
@@ -177,7 +179,7 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 			float weight = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 			float inputState = read_imagef(columnStatesInput, inputPosition).x;
 				
-			float modulation = (float)(abs(dx) + abs(dy)) / (inputReceptiveFieldRadius.x + inputReceptiveFieldRadius.y);
+			float modulation = (float)(abs(dx) + abs(dy)) / (float)(inputReceptiveFieldRadius.x + inputReceptiveFieldRadius.y);
 				
 			float difference = inputState - weight;
 			
@@ -228,7 +230,7 @@ void kernel layerColumnDutyCycleUpdate(read_only image2d_t columnActivations, re
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
-	float maxState = 0.0f;
+	float maxAssignment = 0.0f;
 	
 	for (int dx = -receptiveFieldRadius.x; dx <= receptiveFieldRadius.x; dx++)
 	for (int dy = -receptiveFieldRadius.y; dy <= receptiveFieldRadius.y; dy++) {
@@ -237,7 +239,9 @@ void kernel layerColumnDutyCycleUpdate(read_only image2d_t columnActivations, re
 		if (layerPosition.x >= 0 && layerPosition.x < layerSize.x && layerPosition.y >= 0 && layerPosition.y < layerSize.y) {
 			float state = read_imagef(columnStates, layerPosition).x;
 			
-			maxState = fmax(maxState, state);
+			float dutyCycle = read_imagef(columnDutyCyclesPrev, columnPosition).x;
+			
+			maxAssignment = fmax(maxAssignment, (1.0f - state) * dutyCycle);
 		}
 	}
 	
@@ -246,9 +250,12 @@ void kernel layerColumnDutyCycleUpdate(read_only image2d_t columnActivations, re
 	
 	float thisDutyCycle = read_imagef(columnDutyCyclesPrev, columnPosition).x;
 		
-	float newDutyCycle = (1.0f - stateDutyCycleDecay) * (1.0f - thisState) * thisDutyCycle + thisState;
+	//float newDutyCycle = fmax(minDutyCycleForBoost, fmax((1.0f - stateDutyCycleDecay) * thisDutyCycle, thisState));
+	
+	float newDutyCycle = fmax((1.0f - stateDutyCycleDecay) * thisDutyCycle, thisState);
 		
-	float boost = boostFunction(newDutyCycle, (1.0f - maxState) * boostDutyCycleRatio);
+	//float boost = fmax(0.0f, typicalMaxActivationRatio - exp(maxActivation * stability));//boostFunction(newDutyCycle, (1.0f - exp(maxActivation * stability)) * boostDutyCycleRatio);
+	float boost = (1.0f - maxAssignment) * maxBoost * boostFunction(newDutyCycle, boostDutyCycleRatio);
 		
 	write_imagef(columnDutyCycles, columnPosition, (float4)(newDutyCycle, boost, 0.0f, 0.0f));
 }
@@ -283,9 +290,9 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 				
 			float prevWeight = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 				
-			float modulation = (float)(abs(dx) + abs(dy)) / (inputReceptiveFieldRadius.x + inputReceptiveFieldRadius.y);
+			//float modulation = (float)(abs(dx) + abs(dy)) / (inputReceptiveFieldRadius.x + inputReceptiveFieldRadius.y);
 				
-			float change = connectionAlpha * learnScalar * (inputState - prevWeight) * modulation;
+			float change = connectionAlpha * learnScalar * (inputState - prevWeight);// * modulation;
 				
 			//change += globalIncrement;
 				
@@ -616,7 +623,7 @@ void kernel layerNodeActivate(read_only image3d_t nodeStatesInput, read_only ima
 		
 		float nodeOutput = relu(sum * nodeOutputIntensity) * cellState;
 		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, sigmoid(sum * nodeOutputIntensity), 0.0f, 0.0f));
+		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, fmax(rectifierLeak, sigmoid(sum * nodeOutputIntensity)), 0.0f, 0.0f));
 	}
 }
 
@@ -661,7 +668,7 @@ void kernel layerNodeActivateFirst(read_only image2d_t statesInput, read_only im
 		
 		float nodeOutput = relu(sum * nodeOutputIntensity) * cellState;
 		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, sigmoid(sum * nodeOutputIntensity), 0.0f, 0.0f));
+		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, fmax(rectifierLeak, sigmoid(sum * nodeOutputIntensity)), 0.0f, 0.0f));
 	}
 }
 
@@ -914,7 +921,7 @@ void kernel reconstructInput(read_only image3d_t reconstructionWeights, read_onl
 		
 	sum += bias;
 
-	float output = sum;
+	float output = sigmoid(sum);
 	
 	write_imagef(inputs, inputPosition, (float4)(output, output, output, output));
 }

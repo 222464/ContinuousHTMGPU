@@ -4,7 +4,7 @@
 
 using namespace htm;
 
-void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, float minEncoderInitCenter, float maxEncoderInitCenter, float minEncoderInitWidth, float maxEncoderInitWidth, float minEncoderInitWeight, float maxEncoderInitWeight, std::mt19937 &generator) {
+void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, int reconstructionReceptiveRadius, std::mt19937 &generator) {
 	struct Uint2 {
 		unsigned int _x, _y;
 	};
@@ -118,7 +118,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	
 	_inputErrors = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _inputWidth, _inputHeight);
 
-	_reconstructionReceptiveRadius = std::ceil(static_cast<float>(_layerDescs.front()._width) / static_cast<float>(_inputWidth) * static_cast<float>(_layerDescs.front()._receptiveFieldRadius));
+	_reconstructionReceptiveRadius = reconstructionReceptiveRadius;// std::ceil(static_cast<float>(_layerDescs.front()._width) / static_cast<float>(_inputWidth)* static_cast<float>(_layerDescs.front()._receptiveFieldRadius));
 
 	int reconstructionNumWeights = std::pow(_reconstructionReceptiveRadius * 2 + 1, 2) + 1; // + 1 for bias
 
@@ -1735,7 +1735,7 @@ void HTMRL::learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlph
 	cs.getQueue().enqueueNDRangeKernel(_learnReconstructionKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
 }
 
-void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator) {
+void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float deriveQMutationStdDev, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator) {
 	stepBegin();
 
 	std::uniform_int_distribution<int> seedDist(0, 10000);
@@ -1756,32 +1756,45 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 	else
 		_output[j] = _input[j];
 
-	// Execute HTM
 	activate(_output, cs, seed);
-
-	// Derive max Q action
 	nodeActivate(_output, cs);
 
 	std::cout << "Start" << std::endl;
-	std::cout << getQ(cs) << std::endl;
+
+	std::normal_distribution<float> deriveQMutationDist(0.0f, deriveQMutationStdDev);
+	
+	float maxQ = getQ(cs);
+
+	std::vector<float> suggestedInputs;
+	backpropagateToInputs(cs, deriveMaxQError, suggestedInputs);
 
 	for (int i = 0; i < deriveMaxQIterations; i++) {
-		std::vector<float> suggestedInputs;
-		backpropagateToInputs(cs, deriveMaxQError, suggestedInputs);
+		std::vector<float> tOutput = _output;
 
 		for (int j = 0; j < _output.size(); j++)
 		if (_inputTypes[j] == _action)
-			_output[j] = std::min<float>(1.0f, std::max<float>(0.0f, _output[j] + deriveMaxQAlpha * suggestedInputs[j]));
+			tOutput[j] = std::min<float>(1.0f, std::max<float>(0.0f, std::min<float>(1.0f, std::max<float>(0.0f, _output[j] + deriveMaxQAlpha * suggestedInputs[j])) + deriveQMutationDist(generator)));
 
-		activate(_output, cs, seed);
-		nodeActivate(_output, cs);
+		activate(tOutput, cs, seed);
+		nodeActivate(tOutput, cs);
 
-		std::cout << getQ(cs) << std::endl;
+		float tQ = getQ(cs);
+
+		if (tQ > maxQ) {
+			_output = tOutput;
+
+			std::cout << tQ << " " << maxQ << std::endl;
+
+			maxQ = tQ;
+
+			backpropagateToInputs(cs, deriveMaxQError, suggestedInputs);
+		}
 	}
 
 	std::cout << "End" << std::endl;
 
-	float maxQ = getQ(cs);
+	//activate(_output, cs, seed);
+	//nodeActivate(_output, cs);
 
 	// Exploratory action
 	std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
