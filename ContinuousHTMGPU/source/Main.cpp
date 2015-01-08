@@ -165,14 +165,11 @@ int main() {
 		}
 	}
 
-	inputTypes[31 + 50 * 64] = htm::HTMRL::_action;
-	inputTypes[32 + 50 * 64] = htm::HTMRL::_action;
-	inputTypes[33 + 50 * 64] = htm::HTMRL::_action;
-	inputTypes[34 + 50 * 64] = htm::HTMRL::_action;
-	inputTypes[31 + 51 * 64] = htm::HTMRL::_action;
-	inputTypes[32 + 51 * 64] = htm::HTMRL::_action;
-	inputTypes[33 + 51 * 64] = htm::HTMRL::_action;
-	inputTypes[34 + 51 * 64] = htm::HTMRL::_action;
+	for (int x = 28; x < 36; x++) {
+		for (int y = 48; y < 54; y++) {
+			inputTypes[x + y * 64] = htm::HTMRL::_action;
+		}
+	}
 
 	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, -0.05f, 0.05f, 0.05f, 1.0f, 5, generator);
 
@@ -241,17 +238,17 @@ int main() {
 
 		agent.step(cs, reward, 0.001f, 0.02f, 0.01f, 0.01f, 0.01f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.0f, 3, 100.0f, 100.0f, 0.01f, 0.5f, 0.993f, 0.0f, 0.05f, 0.05f, 10.0f, generator);
 
-		/*float output = 0.0f;
+		float output = 0.0f;
+		int c = 0;
 
-		for (int x = 0; x < 64; x++)
-		for (int y = 32; y < 64; y++) {
-			output += agent.getOutput(x, y);
+		for (int x = 28; x < 36; x++) {
+			for (int y = 48; y < 54; y++) {
+				output += agent.getOutput(x, y);
+				c++;
+			}
 		}
 
-		output /= 32 * 64;*/
-
-		float output = (agent.getOutput(31, 50) + agent.getOutput(32, 50) + agent.getOutput(33, 50) + agent.getOutput(34, 50) +
-			agent.getOutput(31, 51) + agent.getOutput(32, 51) + agent.getOutput(33, 51) + agent.getOutput(34, 51)) * 0.125f;
+		output /= c;
 
 		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, 1.2f * (output * 2.0f - 1.0f)));
 
