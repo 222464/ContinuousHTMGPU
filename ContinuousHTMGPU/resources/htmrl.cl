@@ -622,7 +622,7 @@ void kernel layerNodeActivate(read_only image3d_t nodeStatesInput, read_only ima
 		
 		float nodeOutput = relu(sum * nodeOutputIntensity) * cellState;
 		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, fmax(rectifierLeak, sigmoid(sum * nodeOutputIntensity)), 0.0f, 0.0f));
+		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, fmax(rectifierLeak, sigmoid(sum * nodeOutputIntensity)) * cellState, 0.0f, 0.0f));
 	}
 }
 
@@ -667,7 +667,7 @@ void kernel layerNodeActivateFirst(read_only image2d_t statesInput, read_only im
 		
 		float nodeOutput = relu(sum * nodeOutputIntensity) * cellState;
 		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, fmax(rectifierLeak, sigmoid(sum * nodeOutputIntensity)), 0.0f, 0.0f));
+		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, fmax(rectifierLeak, sigmoid(sum * nodeOutputIntensity)) * cellState, 0.0f, 0.0f));
 	}
 }
 

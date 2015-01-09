@@ -135,27 +135,27 @@ int main() {
 
 	htm::HTMRL agent;
 
-	std::vector<htm::HTMRL::LayerDesc> layerDescs(3);
+	std::vector<htm::HTMRL::LayerDesc> layerDescs(4);
 
 	layerDescs[0]._width = 64;
 	layerDescs[0]._height = 64;
 	layerDescs[0]._inhibitionRadius = 5;
 	layerDescs[0]._qInfluenceMultiplier = 0.2f;
 
-	//layerDescs[1]._width = 44;
-	//layerDescs[1]._height = 44;
-	//layerDescs[1]._inhibitionRadius = 3;
-	//layerDescs[1]._qInfluenceMultiplier = 0.666f;
-
-	layerDescs[1]._width = 32;
-	layerDescs[1]._height = 32;
+	layerDescs[1]._width = 44;
+	layerDescs[1]._height = 44;
 	layerDescs[1]._inhibitionRadius = 5;
-	layerDescs[1]._qInfluenceMultiplier = 0.5f;
+	layerDescs[1]._qInfluenceMultiplier = 0.666f;
 
-	layerDescs[2]._width = 16;
-	layerDescs[2]._height = 16;
+	layerDescs[2]._width = 32;
+	layerDescs[2]._height = 32;
 	layerDescs[2]._inhibitionRadius = 5;
-	layerDescs[2]._qInfluenceMultiplier = 1.0f;
+	layerDescs[2]._qInfluenceMultiplier = 0.5f;
+
+	layerDescs[3]._width = 16;
+	layerDescs[3]._height = 16;
+	layerDescs[3]._inhibitionRadius = 5;
+	layerDescs[3]._qInfluenceMultiplier = 1.0f;
 
 	std::vector<htm::HTMRL::InputType> inputTypes(64 * 64, htm::HTMRL::_state);
 
@@ -236,7 +236,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.001f, 0.02f, 0.01f, 0.01f, 0.01f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.0f, 3, 100.0f, 100.0f, 0.01f, 0.5f, 0.993f, 0.0f, 0.05f, 0.05f, 10.0f, generator);
+		agent.step(cs, reward, 0.005f, 0.02f, 0.05f, 0.05f, 0.01f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.0f, 3, 100.0f, 100.0f, 0.01f, 0.5f, 0.993f, 0.0f, 0.02f, 0.02f, 10.0f, generator);
 
 		float output = 0.0f;
 		int c = 0;
@@ -250,7 +250,7 @@ int main() {
 
 		output /= c;
 
-		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, 1.2f * (output * 2.0f - 1.0f)));
+		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, 2.0f * (output * 2.0f - 1.0f)));
 
 		//std::cout << dir << std::endl;
 

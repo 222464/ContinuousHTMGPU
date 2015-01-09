@@ -1833,7 +1833,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 
 	float q = _prevValue + tdError;
 
-	std::cout << q << " " << tdError << std::endl;
+	std::cout << "Q: " << q << " Err: " << tdError << std::endl;
 
 	backpropagate(cs, 1.0f);
 
@@ -1875,7 +1875,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		region[1] = _inputHeight;
 		region[2] = 1;
 
-		cs.getQueue().enqueueReadImage(_inputImage, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cs.getQueue().enqueueReadImage(_reconstruction, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
