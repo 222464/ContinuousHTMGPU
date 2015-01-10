@@ -236,7 +236,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.005f, 0.02f, 0.2f, 0.1f, 0.01f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.0f, 5, 100.0f, 100.0f, 0.3f, 0.7f, 0.5f, 0.993f, 0.0f, 0.02f, 0.02f, 10.0f, generator);
+		agent.step(cs, reward, 0.001f, 0.02f, 0.2f, 0.1f, 0.01f, 1.0f, 1.0f, 0.01f, 0.002f, 0.1f, 0.0f, 5, 6.0f, 100.0f, 0.05f, 0.8f, 0.5f, 0.993f, 0.0f, 0.02f, 0.02f, 10.0f, generator);
 
 		float output = 0.0f;
 		int c = 0;
@@ -250,7 +250,7 @@ int main() {
 
 		output /= c;
 
-		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, 1.5f * (output * 2.0f - 1.0f)));
+		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, 1.4f * (output * 2.0f - 1.0f)));
 
 		//std::cout << dir << std::endl;
 
