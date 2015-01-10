@@ -35,7 +35,7 @@ namespace htm {
 			float _nodeAlpha;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(4), _lateralConnectionRadius(4), _inhibitionRadius(4), _cellsInColumn(3),
+				: _width(16), _height(16), _receptiveFieldRadius(3), _nodeFieldRadius(3), _lateralConnectionRadius(3), _inhibitionRadius(2), _cellsInColumn(3),
 				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.05f)
 			{}
 		};
@@ -109,7 +109,6 @@ namespace htm {
 
 		// For reconstruction
 		cl::Kernel _reconstructInputKernel;
-		cl::Kernel _learnReconstructionKernel;
 
 		std::vector<float> _input;
 
@@ -134,11 +133,6 @@ namespace htm {
 		cl::Image3D _outputWeights;
 
 		cl::Image2D _partialSums;
-
-		int _reconstructionReceptiveRadius;
-
-		cl::Image3D _reconstructionWeightsPrev;
-		cl::Image3D _reconstructionWeights;
 
 		cl::Image2D _reconstruction;
 
@@ -187,12 +181,11 @@ namespace htm {
 		// Reconstruction
 		void getReconstruction(std::vector<float> &reconstruction, sys::ComputeSystem &cs);
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
-		void learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlpha);
 
 	public:
-		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, int reconstructionReceptiveRadius, std::mt19937 &generator);
+		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float outputAlpha, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float deriveQMutationStdDev, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float outputAlpha, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float deriveQMutationStdDev, float deriveMaxQMutationDecay, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
