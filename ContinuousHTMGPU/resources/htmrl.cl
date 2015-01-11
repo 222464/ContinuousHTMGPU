@@ -21,10 +21,10 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 constant float columnIntensity = 4.0f;
 constant float modulationPower = 2.0f;
 constant float crowdingIntensity = 4.0f;
-constant float cellStateIntensity = 32.0f;
+constant float cellStateIntensity = 64.0f;
 constant float cellPredictionIntensity = 4.0f;
 constant float minLearningThreshold = 0.0f;
-constant float predictionRangeExtension = 0.1f;
+constant float predictionRangeExtension = 0.05f;
 constant float localActivity = 3.0f;
 constant float crowdingActivity = 4.0f;
 constant float uniquenessPower = 4.0f;
@@ -360,17 +360,13 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 				for (int cio = 0; cio < cellsInColumn; cio++) {
 					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
 				
-					float2 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xy;
+					float cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).x;
 			
 					float connectionState = read_imagef(cellStatesPrev, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
 					
-					float eligibility = predictionError * connectionState;
+					float newCellWeight = cellWeightPrev + alpha * predictionError * connectionState;
 					
-					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
-					
-					float newCellWeight = cellWeightPrev.x + alpha * newTrace;
-					
-					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newTrace, 0.0f, 0.0f));
+					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newCellWeight, newCellWeight, newCellWeight));
 					
 					wi++;
 				}
@@ -431,17 +427,13 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 				for (int cio = 0; cio < cellsInColumn; cio++) {
 					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
 				
-					float2 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xy;
+					float cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).x;
 			
 					float connectionState = read_imagef(cellStatesPrev, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
+						
+					float newCellWeight = cellWeightPrev + alpha * predictionError * connectionState;
 					
-					float eligibility = predictionError * connectionState;
-					
-					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + eligibility;
-					
-					float newCellWeight = cellWeightPrev.x + alpha * newTrace;
-					
-					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newTrace, 0.0f, 0.0f));
+					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight, newCellWeight, newCellWeight, newCellWeight));
 					
 					wi++;
 				}
@@ -562,15 +554,15 @@ void kernel layerCellPredictLast(read_only image2d_t columnStates, read_only ima
 void kernel layerColumnPrediction(read_only image3d_t cellPredictions, read_only image3d_t cellStates, write_only image2d_t columnPredictions, int cellsInColumn) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
-	float sum = 0.0f;
+	float maxPrediction = 0.0f;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float prediction = read_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 	
-		sum += prediction;
+		maxPrediction = fmax(maxPrediction, prediction);
 	}
 	
-	float output = sum / cellsInColumn;
+	float output = maxPrediction;//sum / cellsInColumn;
 	
 	write_imagef(columnPredictions, columnPosition, (float4)(output, output, output, output));
 }
@@ -881,7 +873,7 @@ void kernel reconstructInput(read_only image3d_t sdrCenters, read_only image2d_t
 	int2 reverseReceptiveFieldRadius, int2 sdrReceptiveFieldRadius, float2 nextOverReverseNodeFieldSize, float2 inputSizeMinusOneInv, int2 sdrSize, int2 sdrSizeMinusReverseReceptiveRadius)
 {
 	int2 inputPosition = (int2)(get_global_id(0), get_global_id(1));
-	float2 inputPositionNormalized = (float2)((inputPosition.x + 1) * inputSizeMinusOneInv.x, (inputPosition.y + 1) * inputSizeMinusOneInv.y);
+	float2 inputPositionNormalized = (float2)(inputPosition.x * inputSizeMinusOneInv.x, inputPosition.y * inputSizeMinusOneInv.y);
 	float2 sdrPositionCenter = (float2)(inputPositionNormalized.x * sdrSizeMinusReverseReceptiveRadius.x, inputPositionNormalized.y * sdrSizeMinusReverseReceptiveRadius.y);
 	
 	float sum = 0.0f;
@@ -898,15 +890,17 @@ void kernel reconstructInput(read_only image3d_t sdrCenters, read_only image2d_t
 
 			float weight = read_imagef(sdrCenters, (int4)(sdrPosition.x, sdrPosition.y, weightIndex, 0)).x;
 			
-			sum += source * weight;
-			divisor += source;
+			float modulation = pow((float)(abs(dx) + abs(dy)) / (float)(reverseReceptiveFieldRadius.x + reverseReceptiveFieldRadius.y), modulationPower);
+			
+			sum += modulation * source * weight;
+			divisor += modulation * source;
 		}
 	}
 	
 	float recon;
 	
 	if (divisor == 0.0f)
-		recon = 0.0f;
+		recon = 0.5f;
 	else
 		recon = sum / divisor;
 	
