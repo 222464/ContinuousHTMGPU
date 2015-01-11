@@ -171,7 +171,7 @@ int main() {
 		}
 	}
 
-	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, -0.05f, 0.05f, 0.0f, 1.0f, 0.05f, 1.0f, generator);
+	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, 4, -0.05f, 0.05f, -0.2f, 0.2f, 0.05f, 1.0f, generator);
 
 	sf::RenderTexture htmRT;
 	htmRT.create(1024, 1024, false);
