@@ -171,7 +171,7 @@ int main() {
 		}
 	}
 
-	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, 6, -0.05f, 0.05f, -0.2f, 0.2f, 0.05f, 1.0f, generator);
+	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, 4, -0.05f, 0.05f, -0.2f, 0.2f, 0.05f, 1.0f, generator);
 
 	sf::RenderTexture htmRT;
 	htmRT.create(1024, 1024, false);
@@ -236,7 +236,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.01f, 0.02f, 0.02f, 0.1f, 0.05f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.0f, 4, 0.0f, 1000.0f, 0.15f, 0.7f, 0.6f, 0.5f, 0.993f, 0.0f, 0.05f, 0.05f, 10.0f, generator);
+		agent.step(cs, reward, 0.01f, 0.02f, 0.02f, 0.1f, 0.05f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.0f, 4, 10.0f, 1000.0f, 0.15f, 0.7f, 0.6f, 0.5f, 0.993f, 0.0f, 0.05f, 0.05f, 10.0f, generator);
 
 		float output = 0.0f;
 		int c = 0;
