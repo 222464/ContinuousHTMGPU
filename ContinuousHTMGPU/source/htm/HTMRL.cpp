@@ -4,7 +4,7 @@
 
 using namespace htm;
 
-void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator) {
+void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator) {
 	struct Uint2 {
 		unsigned int _x, _y;
 	};
@@ -73,7 +73,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	int prevCellsPerColumn = 1;
 
 	for (int l = 0; l < _layers.size(); l++) {
-		initLayer(cs, initPartOneKernel, initPartTwoKernel, initPartThreeKernel, prevWidth, prevHeight, prevCellsPerColumn, _layers[l], _layerDescs[l], l == _layers.size() - 1, minInitWeight, maxInitWeight, minInitWidth, maxInitWidth, generator);
+		initLayer(cs, initPartOneKernel, initPartTwoKernel, initPartThreeKernel, prevWidth, prevHeight, prevCellsPerColumn, _layers[l], _layerDescs[l], l == _layers.size() - 1, minInitWeight, maxInitWeight, minInitCenter, maxInitCenter, minInitWidth, maxInitWidth, generator);
 
 		prevWidth = _layerDescs[l]._width;
 		prevHeight = _layerDescs[l]._height;
@@ -144,7 +144,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	_reconstructInputKernel = cl::Kernel(program.getProgram(), "reconstructInput");
 }
 
-void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, cl::Kernel &initPartThreeKernel, int inputWidth, int inputHeight, int inputCellsPerColumn, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, float minInitWidth, float maxInitWidth, std::mt19937 &generator) {
+void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, cl::Kernel &initPartThreeKernel, int inputWidth, int inputHeight, int inputCellsPerColumn, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator) {
 	struct Uint2 {
 		unsigned int _x, _y;
 	};
@@ -167,8 +167,8 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 
 	layer._columnActivations = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height);
 	
-	layer._columnStates = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
-	layer._columnStatesPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
+	layer._columnStates = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height);
+	layer._columnStatesPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height);
 
 	layer._columnWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, receptiveFieldSize + 1); // + 1 for width
 	layer._columnWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, receptiveFieldSize + 1); // + 1 for width
@@ -209,8 +209,8 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 	initPartOneKernel.setArg(5, receptiveFieldSize);
 	initPartOneKernel.setArg(6, lateralConnectionsSize);
 	initPartOneKernel.setArg(7, seed1);
-	initPartOneKernel.setArg(8, minInitWeight);
-	initPartOneKernel.setArg(9, maxInitWeight);
+	initPartOneKernel.setArg(8, minInitCenter);
+	initPartOneKernel.setArg(9, maxInitCenter);
 	initPartOneKernel.setArg(10, minInitWidth);
 	initPartOneKernel.setArg(11, maxInitWidth);
 
@@ -429,8 +429,8 @@ void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, 
 	layerSize._y = layerDesc._height;
 
 	Float2 layerSizeMinusOneInv;
-	layerSizeMinusOneInv._x = 1.0f / (prevLayerWidth + 1);
-	layerSizeMinusOneInv._y = 1.0f / (prevLayerHeight + 1);
+	layerSizeMinusOneInv._x = 1.0f / (layerDesc._width - 1);
+	layerSizeMinusOneInv._y = 1.0f / (layerDesc._height - 1);
 
 	Float2 layerSizeInv;
 	layerSizeInv._x = 1.0f / layerDesc._width;
@@ -440,9 +440,9 @@ void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, 
 	inputReceptiveFieldRadius._x = layerDesc._receptiveFieldRadius;
 	inputReceptiveFieldRadius._y = layerDesc._receptiveFieldRadius;
 
-	Int2 inputSizeMinusReceptiveRadius;
-	inputSizeMinusReceptiveRadius._x = inputSize._x - 1;
-	inputSizeMinusReceptiveRadius._y = inputSize._y - 1;
+	Int2 inputSizeMinusOne;
+	inputSizeMinusOne._x = prevLayerWidth - 1;
+	inputSizeMinusOne._y = prevLayerHeight - 1;
 
 	// Activation
 	_layerColumnActivateKernel.setArg(0, prevLayerOutput);
@@ -452,7 +452,7 @@ void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, 
 	_layerColumnActivateKernel.setArg(4, layerSizeMinusOneInv);
 	_layerColumnActivateKernel.setArg(5, inputReceptiveFieldRadius);
 	_layerColumnActivateKernel.setArg(6, inputSize);
-	_layerColumnActivateKernel.setArg(7, inputSizeMinusReceptiveRadius);
+	_layerColumnActivateKernel.setArg(7, inputSizeMinusOne);
 	_layerColumnActivateKernel.setArg(8, seed);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerColumnActivateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
@@ -666,9 +666,9 @@ void HTMRL::learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D 
 	layerReceptiveFieldRadius._x = layerDesc._receptiveFieldRadius;
 	layerReceptiveFieldRadius._y = layerDesc._receptiveFieldRadius;
 
-	Int2 inputSizeMinusReceptiveRadius;
-	inputSizeMinusReceptiveRadius._x = layerDesc._width - 1;
-	inputSizeMinusReceptiveRadius._y = layerDesc._height - 1;
+	Int2 inputSizeMinusOne;
+	inputSizeMinusOne._x = layerDesc._width - 1;
+	inputSizeMinusOne._y = layerDesc._height - 1;
 
 	// Column weight update
 	_layerColumnWeightUpdateKernel.setArg(0, prevLayerOutput);
@@ -680,7 +680,7 @@ void HTMRL::learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D 
 	_layerColumnWeightUpdateKernel.setArg(6, layerSizeMinusOneInv);
 	_layerColumnWeightUpdateKernel.setArg(7, inputReceptiveFieldRadius);
 	_layerColumnWeightUpdateKernel.setArg(8, inputSize);
-	_layerColumnWeightUpdateKernel.setArg(9, inputSizeMinusReceptiveRadius);
+	_layerColumnWeightUpdateKernel.setArg(9, inputSizeMinusOne);
 	_layerColumnWeightUpdateKernel.setArg(10, columnConnectionAlpha);
 	_layerColumnWeightUpdateKernel.setArg(11, widthAlpha);
 	_layerColumnWeightUpdateKernel.setArg(12, seed);
@@ -876,9 +876,9 @@ void HTMRL::learnLayerSpatialTemporal(sys::ComputeSystem &cs, Layer &layer, cl::
 	layerReceptiveFieldRadius._x = layerDesc._receptiveFieldRadius;
 	layerReceptiveFieldRadius._y = layerDesc._receptiveFieldRadius;
 
-	Int2 inputSizeMinusReceptiveRadius;
-	inputSizeMinusReceptiveRadius._x = prevLayerWidth - 1;
-	inputSizeMinusReceptiveRadius._y = prevLayerHeight - 1;
+	Int2 inputSizeMinusOne;
+	inputSizeMinusOne._x = prevLayerWidth - 1;
+	inputSizeMinusOne._y = prevLayerHeight - 1;
 
 	// Column weight update
 	_layerColumnWeightUpdateKernel.setArg(0, prevLayerOutput);
@@ -890,7 +890,7 @@ void HTMRL::learnLayerSpatialTemporal(sys::ComputeSystem &cs, Layer &layer, cl::
 	_layerColumnWeightUpdateKernel.setArg(6, layerSizeMinusOneInv);
 	_layerColumnWeightUpdateKernel.setArg(7, inputReceptiveFieldRadius);
 	_layerColumnWeightUpdateKernel.setArg(8, inputSize);
-	_layerColumnWeightUpdateKernel.setArg(9, inputSizeMinusReceptiveRadius);
+	_layerColumnWeightUpdateKernel.setArg(9, inputSizeMinusOne);
 	_layerColumnWeightUpdateKernel.setArg(10, columnConnectionAlpha);
 	_layerColumnWeightUpdateKernel.setArg(11, widthAlpha);
 	_layerColumnWeightUpdateKernel.setArg(12, seed);
@@ -968,9 +968,9 @@ void HTMRL::learnLayerSpatialTemporalLast(sys::ComputeSystem &cs, Layer &layer, 
 	layerReceptiveFieldRadius._x = layerDesc._receptiveFieldRadius;
 	layerReceptiveFieldRadius._y = layerDesc._receptiveFieldRadius;
 
-	Int2 inputSizeMinusReceptiveRadius;
-	inputSizeMinusReceptiveRadius._x = prevLayerWidth - 1;
-	inputSizeMinusReceptiveRadius._y = prevLayerHeight - 1;
+	Int2 inputSizeMinusOne;
+	inputSizeMinusOne._x = prevLayerWidth - 1;
+	inputSizeMinusOne._y = prevLayerHeight - 1;
 
 	// Column weight update
 	_layerColumnWeightUpdateKernel.setArg(0, prevLayerOutput);
@@ -982,7 +982,7 @@ void HTMRL::learnLayerSpatialTemporalLast(sys::ComputeSystem &cs, Layer &layer, 
 	_layerColumnWeightUpdateKernel.setArg(6, layerSizeMinusOneInv);
 	_layerColumnWeightUpdateKernel.setArg(7, inputReceptiveFieldRadius);
 	_layerColumnWeightUpdateKernel.setArg(8, inputSize);
-	_layerColumnWeightUpdateKernel.setArg(9, inputSizeMinusReceptiveRadius);
+	_layerColumnWeightUpdateKernel.setArg(9, inputSizeMinusOne);
 	_layerColumnWeightUpdateKernel.setArg(10, columnConnectionAlpha);
 	_layerColumnWeightUpdateKernel.setArg(11, widthAlpha);
 	_layerColumnWeightUpdateKernel.setArg(12, seed);
@@ -1119,9 +1119,9 @@ void HTMRL::layerNodeActivate(sys::ComputeSystem &cs, Layer &layer, const LayerD
 	inputSize._x = inputDesc._width;
 	inputSize._y = inputDesc._height;
 
-	Int2 inputSizeMinusReceptiveRadius;
-	inputSizeMinusReceptiveRadius._x = inputDesc._width - 1;
-	inputSizeMinusReceptiveRadius._y = inputDesc._height - 1;
+	Int2 inputSizeMinusOne;
+	inputSizeMinusOne._x = inputDesc._width - 1;
+	inputSizeMinusOne._y = inputDesc._height - 1;
 
 	_layerNodeActivateKernel.setArg(0, inputImage);
 	_layerNodeActivateKernel.setArg(1, layer._cellStates);
@@ -1133,7 +1133,7 @@ void HTMRL::layerNodeActivate(sys::ComputeSystem &cs, Layer &layer, const LayerD
 	_layerNodeActivateKernel.setArg(7, nodeFieldRadius);
 	_layerNodeActivateKernel.setArg(8, layerSizeMinusOneInv);
 	_layerNodeActivateKernel.setArg(9, inputSize);
-	_layerNodeActivateKernel.setArg(10, inputSizeMinusReceptiveRadius);
+	_layerNodeActivateKernel.setArg(10, inputSizeMinusOne);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerNodeActivateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 }
@@ -1158,9 +1158,9 @@ void HTMRL::layerNodeActivateFirst(sys::ComputeSystem &cs, Layer &layer, const L
 	inputSize._x = _inputWidth;
 	inputSize._y = _inputHeight;
 
-	Int2 inputSizeMinusReceptiveRadius;
-	inputSizeMinusReceptiveRadius._x = _inputWidth - 1;
-	inputSizeMinusReceptiveRadius._y = _inputHeight - 1;
+	Int2 inputSizeMinusOne;
+	inputSizeMinusOne._x = _inputWidth - 1;
+	inputSizeMinusOne._y = _inputHeight - 1;
 
 	_layerNodeActivateFirstKernel.setArg(0, inputImage);
 	_layerNodeActivateFirstKernel.setArg(1, layer._cellStates);
@@ -1171,7 +1171,7 @@ void HTMRL::layerNodeActivateFirst(sys::ComputeSystem &cs, Layer &layer, const L
 	_layerNodeActivateFirstKernel.setArg(6, nodeFieldRadius);
 	_layerNodeActivateFirstKernel.setArg(7, layerSizeMinusOneInv);
 	_layerNodeActivateFirstKernel.setArg(8, inputSize);
-	_layerNodeActivateFirstKernel.setArg(9, inputSizeMinusReceptiveRadius);
+	_layerNodeActivateFirstKernel.setArg(9, inputSizeMinusOne);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerNodeActivateFirstKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 }
@@ -1400,9 +1400,9 @@ void HTMRL::layerNodeWeightUpdate(sys::ComputeSystem &cs, Layer &layer, const La
 	inputSize._x = inputDesc._width;
 	inputSize._y = inputDesc._height;
 
-	Int2 inputSizeMinusReceptiveRadius;
-	inputSizeMinusReceptiveRadius._x = inputDesc._width - layerDesc._nodeFieldRadius;
-	inputSizeMinusReceptiveRadius._y = inputDesc._height - layerDesc._nodeFieldRadius;
+	Int2 inputSizeMinusOne;
+	inputSizeMinusOne._x = inputDesc._width - layerDesc._nodeFieldRadius;
+	inputSizeMinusOne._y = inputDesc._height - layerDesc._nodeFieldRadius;
 
 	_layerNodeWeightUpdateKernel.setArg(0, layer._nodeErrors);
 	_layerNodeWeightUpdateKernel.setArg(1, inputImage);
@@ -1415,7 +1415,7 @@ void HTMRL::layerNodeWeightUpdate(sys::ComputeSystem &cs, Layer &layer, const La
 	_layerNodeWeightUpdateKernel.setArg(8, nodeFieldRadius);
 	_layerNodeWeightUpdateKernel.setArg(9, layerSizeMinusOneInv);
 	_layerNodeWeightUpdateKernel.setArg(10, inputSize);
-	_layerNodeWeightUpdateKernel.setArg(11, inputSizeMinusReceptiveRadius);
+	_layerNodeWeightUpdateKernel.setArg(11, inputSizeMinusOne);
 	_layerNodeWeightUpdateKernel.setArg(12, alpha);
 	_layerNodeWeightUpdateKernel.setArg(13, eligibilityDecay);
 
@@ -1442,9 +1442,9 @@ void HTMRL::layerNodeWeightUpdateFirst(sys::ComputeSystem &cs, Layer &layer, con
 	inputSize._x = _inputWidth;
 	inputSize._y = _inputHeight;
 
-	Int2 inputSizeMinusReceptiveRadius;
-	inputSizeMinusReceptiveRadius._x = _inputWidth - layerDesc._nodeFieldRadius;
-	inputSizeMinusReceptiveRadius._y = _inputHeight - layerDesc._nodeFieldRadius;
+	Int2 inputSizeMinusOne;
+	inputSizeMinusOne._x = _inputWidth - layerDesc._nodeFieldRadius;
+	inputSizeMinusOne._y = _inputHeight - layerDesc._nodeFieldRadius;
 
 	_layerNodeWeightUpdateFirstKernel.setArg(0, layer._nodeErrors);
 	_layerNodeWeightUpdateFirstKernel.setArg(1, inputImage);
@@ -1456,7 +1456,7 @@ void HTMRL::layerNodeWeightUpdateFirst(sys::ComputeSystem &cs, Layer &layer, con
 	_layerNodeWeightUpdateFirstKernel.setArg(7, nodeFieldRadius);
 	_layerNodeWeightUpdateFirstKernel.setArg(8, layerSizeMinusOneInv);
 	_layerNodeWeightUpdateFirstKernel.setArg(9, inputSize);
-	_layerNodeWeightUpdateFirstKernel.setArg(10, inputSizeMinusReceptiveRadius);
+	_layerNodeWeightUpdateFirstKernel.setArg(10, inputSizeMinusOne);
 	_layerNodeWeightUpdateFirstKernel.setArg(11, alpha);
 	_layerNodeWeightUpdateFirstKernel.setArg(12, eligibilityDecay);
 
@@ -1809,7 +1809,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		region[1] = _layerDescs[l]._height;
 		region[2] = _layerDescs[l]._cellsInColumn;
 
-		cs.getQueue().enqueueReadImage(_layers[l]._cellPredictions, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cs.getQueue().enqueueReadImage(_layers[l]._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
