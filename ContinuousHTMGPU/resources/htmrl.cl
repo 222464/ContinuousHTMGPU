@@ -19,7 +19,7 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 	CLK_FILTER_NEAREST;
 	
 constant float columnIntensity = 4.0f;
-constant float autoFireIntensity = 0.05f;
+constant float autoFireIntensity = 2.0f;
 constant float learnIntensity = 0.3f;
 constant float modulationPower = 2.0f;
 constant float crowdingIntensity = 4.0f;
@@ -27,13 +27,13 @@ constant float cellStateIntensity = 64.0f;
 constant float cellPredictionIntensity = 4.0f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.05f;
-constant float localActivity = 6.0f;
-constant float crowdingActivity = 7.0f;
+constant float localActivity = 3.0f;
+constant float crowdingActivity = 5.0f;
 constant float uniquenessPower = 4.0f;
 constant float minOverlapForActivation = 0.0f;
 constant float subOverlapIncrement = 0.0005f;
 constant float boostDutyCycleRatio = 0.01f;
-constant float maxBoost = 1.1f;
+constant float maxBoost = 1.0f;
 constant float typicalMaxActivationRatio = 0.5f;
 constant float widthScalar = 1.0f;
 constant float minWidth = 0.0001f;
@@ -226,9 +226,9 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, read_only 
 		}
 	}
 	
-	//float boost = read_imagef(columnDutyCyclesPrev, columnPosition).y;
+	float boost = read_imagef(columnDutyCyclesPrev, columnPosition).y;
 	
-	float autoLearn = 1.0f - exp(maxActivation * autoFireIntensity);
+	float autoLearn = boost * (1.0f - exp(maxActivation * autoFireIntensity));
 	
 	float inhibitedResult = fmax(0.0f, sigmoid((localActivity - higherSum) * columnIntensity) * 2.0f - 1.0f);//exp((thisActivation - maxActivation) * columnIntensity);//exp(-higherSum * columnIntensity);// //
 
@@ -284,9 +284,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 	
 	//float globalIncrement = fmax(0.0f, minOverlapForActivation - dutyCyclePrev.x) * subOverlapIncrement;
 	
-	float target = thisState.x;//(1.0f - thisState.y) * thisState.x + thisState.y;// * (1.0f - dutyCyclePrev.y);//(1.0f - dutyCyclePrev.y) * thisLearn + dutyCyclePrev.y;
-
-	float error = target - thisActivation.x;
+	float error = thisState.y * (thisState.x - sigmoid(thisActivation.x));
 	
 	// Adjust weights by their source activations and error
 	int weightIndex = 0;
@@ -613,9 +611,11 @@ void kernel layerNodeActivate(read_only image3d_t nodeStatesInput, read_only ima
 		
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		float nodeOutput = relu(sum * nodeOutputIntensity) * cellState;
+		float sig = sigmoid(sum * nodeOutputIntensity);
 		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, fmax(rectifierLeak, sigmoid(sum * nodeOutputIntensity)) * cellState, 0.0f, 0.0f));
+		float nodeOutput = sig * cellState;
+		
+		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, sig * (1.0f - sig) * cellState, 0.0f, 0.0f));
 	}
 }
 
@@ -658,9 +658,11 @@ void kernel layerNodeActivateFirst(read_only image2d_t statesInput, read_only im
 		
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		float nodeOutput = relu(sum * nodeOutputIntensity) * cellState;
+		float sig = sigmoid(sum * nodeOutputIntensity);
 		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, fmax(rectifierLeak, sigmoid(sum * nodeOutputIntensity)) * cellState, 0.0f, 0.0f));
+		float nodeOutput = sig * cellState;
+		
+		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, sig * (1.0f - sig) * cellState, 0.0f, 0.0f));
 	}
 }
 
