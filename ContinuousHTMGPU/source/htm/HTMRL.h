@@ -35,8 +35,8 @@ namespace htm {
 			float _nodeAlpha;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(4), _lateralConnectionRadius(4), _inhibitionRadius(3), _cellsInColumn(3),
-				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.01f)
+				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(4), _lateralConnectionRadius(5), _inhibitionRadius(3), _cellsInColumn(3),
+				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.02f)
 			{}
 		};
 
@@ -146,7 +146,7 @@ namespace htm {
 
 		void stepBegin();
 
-		void activate(std::vector<float> &input, sys::ComputeSystem &cs, unsigned long seed);
+		void activate(std::vector<float> &input, sys::ComputeSystem &cs, bool predict, unsigned long seed);
 	
 		void learnSpatial(sys::ComputeSystem &cs, float columnConnectionAlpha, float widthAlpha, unsigned long seed);
 		

@@ -18,15 +18,15 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 	CLK_ADDRESS_CLAMP_TO_EDGE |
 	CLK_FILTER_NEAREST;
 	
-constant float columnIntensity = 4.0f;
+constant float columnIntensity = 8.0f;
 constant float autoFireIntensity = 0.1f;
 constant float learnIntensity = 0.3f;
-constant float modulationPower = 2.0f;
-constant float crowdingIntensity = 4.0f;
+constant float modulationPower = 1.0f;
+constant float crowdingIntensity = 3.0f;
 constant float cellStateIntensity = 64.0f;
 constant float cellPredictionIntensity = 4.0f;
 constant float minLearningThreshold = 0.0f;
-constant float predictionRangeExtension = 0.05f;
+constant float predictionRangeExtension = 0.1f;
 constant float localActivity = 3.0f;
 constant float crowdingActivity = 5.0f;
 constant float uniquenessPower = 4.0f;
@@ -607,11 +607,9 @@ void kernel layerNodeActivate(read_only image3d_t nodeStatesInput, read_only ima
 		
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		float sig = sigmoid(sum * nodeOutputIntensity);
+		float nodeOutput = relu(sum * nodeOutputIntensity) * cellState;
 		
-		float nodeOutput = sig * cellState;
-		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, sig * (1.0f - sig) * cellState, 0.0f, 0.0f));
+		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, fmax(rectifierLeak, sigmoid(sum * nodeOutputIntensity)) * cellState, 0.0f, 0.0f));
 	}
 }
 
@@ -654,11 +652,9 @@ void kernel layerNodeActivateFirst(read_only image2d_t statesInput, read_only im
 		
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		float sig = sigmoid(sum * nodeOutputIntensity);
+		float nodeOutput = relu(sum * nodeOutputIntensity) * cellState;
 		
-		float nodeOutput = sig * cellState;
-		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, sig * (1.0f - sig) * cellState, 0.0f, 0.0f));
+		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, fmax(rectifierLeak, sigmoid(sum * nodeOutputIntensity)) * cellState, 0.0f, 0.0f));
 	}
 }
 
@@ -909,11 +905,11 @@ void kernel reconstructInput(read_only image3d_t reconstructionWeights, read_onl
 	}
 
 	// Bias
-	float bias = read_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
+	//float bias = read_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
 		
-	sum += bias;
+	//sum += bias;
 
-	float output = sigmoid(sum);
+	float output = fmin(1.0f, fmax(0.0f, sum));
 	
 	write_imagef(inputs, columnPosition, (float4)(output, output, output, output));
 }
@@ -950,9 +946,9 @@ void kernel learnReconstruction(read_only image2d_t targets, read_only image2d_t
  	}
  	
  	// Bias
- 	float prevBias = read_imagef(reconstructionWeightsPrev, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
+ 	//float prevBias = read_imagef(reconstructionWeightsPrev, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
  		
- 	float newBias = prevBias + error;
+ 	//float newBias = prevBias + error;
  	
- 	write_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0), (float4)(newBias, newBias, newBias, newBias));
+ 	//write_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0), (float4)(newBias, newBias, newBias, newBias));
  }
