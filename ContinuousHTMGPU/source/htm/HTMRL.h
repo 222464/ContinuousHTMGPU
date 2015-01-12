@@ -35,7 +35,7 @@ namespace htm {
 			float _nodeAlpha;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(4), _lateralConnectionRadius(5), _inhibitionRadius(3), _cellsInColumn(3),
+				: _width(16), _height(16), _receptiveFieldRadius(3), _nodeFieldRadius(3), _lateralConnectionRadius(4), _inhibitionRadius(3), _cellsInColumn(5),
 				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.02f)
 			{}
 		};
