@@ -1312,13 +1312,13 @@ void HTMRL::backpropagate(sys::ComputeSystem &cs, float qError) {
 		layerNodeBackpropagate(cs, _layers[l], _layers[l + 1], _layerDescs[l], _layerDescs[l + 1]);
 }
 
-void HTMRL::nodeLearn(sys::ComputeSystem &cs, float qError, float outputAlpha, float eligibilityDecay) {
-	layerNodeWeightUpdateLast(cs, qError, outputAlpha, eligibilityDecay);
+void HTMRL::nodeLearn(sys::ComputeSystem &cs, float qError, float outputAlpha, float outputBeta, float outputTemperature, float eligibilityDecay) {
+	layerNodeWeightUpdateLast(cs, qError, outputAlpha, outputBeta, outputTemperature, eligibilityDecay);
 
 	for (int l = _layers.size() - 1; l >= 1; l--)
-		layerNodeWeightUpdate(cs, _layers[l], _layerDescs[l], _layerDescs[l - 1], _layers[l - 1]._nodeOutputs, qError * _layerDescs[l]._nodeAlpha, eligibilityDecay);
+		layerNodeWeightUpdate(cs, _layers[l], _layerDescs[l], _layerDescs[l - 1], _layers[l - 1]._nodeOutputs, qError * _layerDescs[l]._nodeAlpha, outputBeta, outputTemperature, eligibilityDecay);
 
-	layerNodeWeightUpdateFirst(cs, _layers.front(), _layerDescs.front(), _inputImage, qError * _layerDescs.front()._nodeAlpha, eligibilityDecay);
+	layerNodeWeightUpdateFirst(cs, _layers.front(), _layerDescs.front(), _inputImage, qError * _layerDescs.front()._nodeAlpha, outputBeta, outputTemperature, eligibilityDecay);
 
 	_outputBias += outputAlpha * qError;
 }
@@ -1430,7 +1430,7 @@ void HTMRL::layerNodeBackpropagateToInput(sys::ComputeSystem &cs) {
 	cs.getQueue().enqueueNDRangeKernel(_layerNodeBackpropagateToInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
 }
 
-void HTMRL::layerNodeWeightUpdate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, const LayerDesc &inputDesc, cl::Image3D &inputImage, float alpha, float eligibilityDecay) {
+void HTMRL::layerNodeWeightUpdate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, const LayerDesc &inputDesc, cl::Image3D &inputImage, float alpha, float beta, float temperature, float eligibilityDecay) {
 	struct Int2 {
 		int _x, _y;
 	};
@@ -1467,12 +1467,14 @@ void HTMRL::layerNodeWeightUpdate(sys::ComputeSystem &cs, Layer &layer, const La
 	_layerNodeWeightUpdateKernel.setArg(10, inputSize);
 	_layerNodeWeightUpdateKernel.setArg(11, inputSizeMinusOne);
 	_layerNodeWeightUpdateKernel.setArg(12, alpha);
-	_layerNodeWeightUpdateKernel.setArg(13, eligibilityDecay);
+	_layerNodeWeightUpdateKernel.setArg(13, beta);
+	_layerNodeWeightUpdateKernel.setArg(14, temperature);
+	_layerNodeWeightUpdateKernel.setArg(15, eligibilityDecay);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerNodeWeightUpdateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 }
 
-void HTMRL::layerNodeWeightUpdateFirst(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, cl::Image2D &inputImage, float alpha, float eligibilityDecay) {
+void HTMRL::layerNodeWeightUpdateFirst(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, cl::Image2D &inputImage, float alpha, float beta, float temperature, float eligibilityDecay) {
 	struct Int2 {
 		int _x, _y;
 	};
@@ -1508,18 +1510,22 @@ void HTMRL::layerNodeWeightUpdateFirst(sys::ComputeSystem &cs, Layer &layer, con
 	_layerNodeWeightUpdateFirstKernel.setArg(9, inputSize);
 	_layerNodeWeightUpdateFirstKernel.setArg(10, inputSizeMinusOne);
 	_layerNodeWeightUpdateFirstKernel.setArg(11, alpha);
-	_layerNodeWeightUpdateFirstKernel.setArg(12, eligibilityDecay);
+	_layerNodeWeightUpdateFirstKernel.setArg(12, beta);
+	_layerNodeWeightUpdateFirstKernel.setArg(13, temperature);
+	_layerNodeWeightUpdateFirstKernel.setArg(14, eligibilityDecay);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerNodeWeightUpdateFirstKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 }
 
-void HTMRL::layerNodeWeightUpdateLast(sys::ComputeSystem &cs, float qError, float alpha, float eligibilityDecay) {
+void HTMRL::layerNodeWeightUpdateLast(sys::ComputeSystem &cs, float qError, float alpha, float beta, float temperature, float eligibilityDecay) {
 	_layerNodeWeightUpdateLastKernel.setArg(0, _layers.back()._nodeOutputs);
 	_layerNodeWeightUpdateLastKernel.setArg(1, _outputWeightsPrev);
 	_layerNodeWeightUpdateLastKernel.setArg(2, _outputWeights);
 	_layerNodeWeightUpdateLastKernel.setArg(3, _layerDescs.back()._cellsInColumn);
 	_layerNodeWeightUpdateLastKernel.setArg(4, alpha * qError);
-	_layerNodeWeightUpdateLastKernel.setArg(5, eligibilityDecay);
+	_layerNodeWeightUpdateLastKernel.setArg(5, beta);
+	_layerNodeWeightUpdateLastKernel.setArg(6, temperature);
+	_layerNodeWeightUpdateLastKernel.setArg(7, eligibilityDecay);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerNodeWeightUpdateLastKernel, cl::NullRange, cl::NDRange(_layerDescs.back()._width, _layerDescs.back()._height));
 }
@@ -1731,7 +1737,7 @@ void HTMRL::learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlph
 	cs.getQueue().enqueueNDRangeKernel(_learnReconstructionKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
 }
 
-void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float deriveQMutationStdDev, float deriveMaxQMutationDecay, float deriveMaxQMomentum, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator) {
+void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float outputBeta, float outputTemperature, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellWeightEligibilityDecay, float cellQWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float deriveQMutationStdDev, float deriveMaxQMutationDecay, float deriveMaxQMomentum, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator) {
 	stepBegin();
 
 	std::uniform_int_distribution<int> seedDist(0, 10000);
@@ -1848,7 +1854,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 	else if (tdError < -maxTdError)
 		tdError = -maxTdError;
 
-	nodeLearn(cs, tdError, outputAlpha, nodeEligibilityDecay);
+	nodeLearn(cs, tdError, outputAlpha, outputBeta, outputTemperature, nodeEligibilityDecay);
 
 	_prevOutput = _output;
 	_prevOutputExploratory = _exploratoryOutput;
