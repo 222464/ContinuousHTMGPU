@@ -1636,6 +1636,62 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 	}
 }
 
+void HTMRL::getReconstructedPrevPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs) {
+	struct Int2 {
+		int _x, _y;
+	};
+
+	struct Float2 {
+		float _x, _y;
+	};
+
+	Int2 layerSize;
+	layerSize._x = _layerDescs.front()._width;
+	layerSize._y = _layerDescs.front()._height;
+
+	Float2 inputSizeMinusOneInv;
+	inputSizeMinusOneInv._x = 1.0f / (_inputWidth - 1);
+	inputSizeMinusOneInv._y = 1.0f / (_inputHeight - 1);
+
+	Int2 reconstructionReceptiveFieldRadii;
+	reconstructionReceptiveFieldRadii._x = _reconstructionReceptiveRadius;
+	reconstructionReceptiveFieldRadii._y = _reconstructionReceptiveRadius;
+
+	Int2 layerSizeMinusOne;
+	layerSizeMinusOne._x = _layerDescs.front()._width - 1;
+	layerSizeMinusOne._y = _layerDescs.front()._height - 1;
+
+	_reconstructInputKernel.setArg(0, _reconstructionWeightsPrev);
+	_reconstructInputKernel.setArg(1, _layers.front()._columnPredictionsPrev);
+	_reconstructInputKernel.setArg(2, _reconstruction);
+	_reconstructInputKernel.setArg(3, reconstructionReceptiveFieldRadii);
+	_reconstructInputKernel.setArg(4, inputSizeMinusOneInv);
+	_reconstructInputKernel.setArg(5, layerSize);
+	_reconstructInputKernel.setArg(6, layerSizeMinusOne);
+
+	cs.getQueue().enqueueNDRangeKernel(_reconstructInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
+
+	cs.getQueue().flush();
+
+	if (prediction.size() != _input.size())
+		prediction.resize(_input.size());
+
+	// Read prediction
+	{
+		cl::size_t<3> origin;
+		origin[0] = 0;
+		origin[1] = 0;
+		origin[2] = 0;
+
+		cl::size_t<3> region;
+		region[0] = _inputWidth;
+		region[1] = _inputHeight;
+		region[2] = 1;
+
+		cs.getQueue().enqueueReadImage(_reconstruction, CL_TRUE, origin, region, 0, 0, &prediction[0]);
+	}
+}
+
 void HTMRL::learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlpha) {
 	struct Int2 {
 		int _x, _y;
@@ -1769,11 +1825,11 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 
 	learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, cellConnectionAlpha, 1.0f, seed + 1);
 
-	getReconstructedPrediction(_output, cs);
-
 	std::vector<float> recon;
-	getReconstruction(recon, cs);
+	getReconstructedPrevPrediction(recon, cs);
 	learnReconstruction(cs, reconstructionAlpha);
+
+	getReconstructedPrediction(_output, cs);
 
 	float value = getQ(cs);
 
@@ -1889,7 +1945,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		region[1] = _layerDescs[l]._height;
 		region[2] = _layerDescs[l]._cellsInColumn;
 
-		cs.getQueue().enqueueReadImage(_layers[l]._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cs.getQueue().enqueueReadImage(_layers[l]._cellPredictions, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
