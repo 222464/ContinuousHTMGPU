@@ -116,7 +116,7 @@ void kernel initializePartTwo(write_only image3d_t cellStates, write_only image3
 		
 			float cellWeight = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
 	
-			write_imagef(cellWeights, weightPosition, (float4)(cellWeight, cellWeight, cellWeight, cellWeight));
+			write_imagef(cellWeights, weightPosition, (float4)(cellWeight, 0.0f, 0.0f, 0.0f));
 		}
 	}
 }
@@ -939,11 +939,11 @@ void kernel reconstructInput(read_only image3d_t reconstructionWeights, read_onl
 	}
 
 	// Bias
-	//float bias = read_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
+	float bias = read_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
 		
-	//sum += bias;
+	sum += bias;
 
-	float output = sum;
+	float output = sigmoid(sum);
 	
 	write_imagef(inputs, columnPosition, (float4)(output, output, output, output));
 }
@@ -958,7 +958,7 @@ void kernel learnReconstruction(read_only image2d_t targets, read_only image2d_t
  	float target = read_imagef(targets, columnPosition).x;
  	float input = read_imagef(inputs, columnPosition).x;
  	
- 	float error = alpha * (target - input);// * input * (1.0f - input);
+ 	float error = alpha * (target - input);
  	
  	int wi = 0;
  	
@@ -980,9 +980,9 @@ void kernel learnReconstruction(read_only image2d_t targets, read_only image2d_t
  	}
  	
  	// Bias
- 	//float prevBias = read_imagef(reconstructionWeightsPrev, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
+	float prevBias = read_imagef(reconstructionWeightsPrev, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
  		
- 	//float newBias = prevBias + error;
+ 	float newBias = prevBias + error;
  	
- 	//write_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0), (float4)(newBias, newBias, newBias, newBias));
+ 	write_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0), (float4)(newBias, newBias, newBias, newBias));
  }

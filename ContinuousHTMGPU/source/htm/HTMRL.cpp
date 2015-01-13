@@ -1746,11 +1746,11 @@ void HTMRL::learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlph
 }
 
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float outputBeta, float outputTemperature, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float deriveQMutationStdDev, float deriveMaxQMutationDecay, float deriveMaxQMomentum, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator) {
-	stepBegin();
-
 	std::uniform_int_distribution<int> seedDist(0, 10000);
 
 	unsigned long seed = seedDist(generator);
+
+	stepBegin();
 
 	for (int i = 0; i < _input.size(); i++)
 	if (_inputTypes[i] == _action)
@@ -1771,12 +1771,12 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 	std::vector<float> learnInputMaxQ(_input.size());
 
 	for (int i = 0; i < _input.size(); i++)
-		if (_inputTypes[i] == _action)
-			learnInputMaxQ[i] = std::min<float>(1.0f, std::max<float>(0.0f, _prevOutput[i]));
-		else if (_inputTypes[i] == _unused)
-			learnInputMaxQ[i] = 0.0f;
-		else
-			learnInputMaxQ[i] = _input[i];
+	if (_inputTypes[i] == _action)
+		learnInputMaxQ[i] = std::min<float>(1.0f, std::max<float>(0.0f, _prevOutput[i]));
+	else if (_inputTypes[i] == _unused)
+		learnInputMaxQ[i] = 0.0f;
+	else
+		learnInputMaxQ[i] = _input[i];
 
 	activate(_input, cs, true, seed);
 	nodeActivate(_input, cs);
@@ -1797,21 +1797,19 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 			_exploratoryOutput[i] = std::min<float>(1.0f, std::max<float>(0.0f, std::min<float>(1.0f, std::max<float>(0.0f, _output[i])) + pertDist(generator)));
 	}
 
-	float value = getQ(cs);
+	float maxQ = getQ(cs);
 
-	float newQ = reward + gamma * value;
+	float newQ = reward + gamma * maxQ;
 
 	float tdError = alpha * (newQ - _prevValue);
-
-	float q = _prevValue + tdError;
 
 	if (tdError > 0.0f) {
 		activate(learnInputExploratory, cs, false, seed);
 		learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, cellConnectionAlpha * tdError, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, seed + 1);
 
-		std::vector<float> recon;
-		getReconstructedPrevPrediction(recon, cs);
-		learnReconstruction(cs, reconstructionAlpha);
+		//std::vector<float> recon;
+		//getReconstructedPrevPrediction(recon, cs);
+		//learnReconstruction(cs, reconstructionAlpha);
 
 		activate(_input, cs, true, seed);
 	}
@@ -1819,14 +1817,22 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 		activate(learnInputMaxQ, cs, false, seed);
 		learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, cellConnectionAlpha * tdError, 0.0f, cellConnectionTemperature, cellWeightEligibilityDecay, seed + 1);
 
-		std::vector<float> recon;
-		getReconstructedPrevPrediction(recon, cs);
-		learnReconstruction(cs, reconstructionAlpha);
+		//std::vector<float> recon;
+		//getReconstructedPrevPrediction(recon, cs);
+		//learnReconstruction(cs, reconstructionAlpha);
 
 		activate(_input, cs, true, seed);
 	}
 
-	std::cout << "Q: " << q << " Err: " << tdError << std::endl;
+	nodeActivate(_input, cs);
+
+	_prevValue = getQ(cs);
+
+	std::vector<float> recon;
+	getReconstruction(recon, cs);
+	learnReconstruction(cs, reconstructionAlpha);
+
+	std::cout << "Q: " << newQ << " Err: " << tdError << std::endl;
 
 	backpropagate(cs, 1.0f);
 
@@ -1839,7 +1845,6 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 
 	_prevOutput = _output;
 	_prevOutputExploratory = _exploratoryOutput;
-	_prevValue = value;
 
 	/*stepBegin();
 
