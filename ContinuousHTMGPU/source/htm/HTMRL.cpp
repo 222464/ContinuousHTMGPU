@@ -671,7 +671,7 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, bool pre
 	}
 }
 
-void HTMRL::learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, std::mt19937 &generator) {
+void HTMRL::learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, std::mt19937 &generator) {
 	struct Uint2 {
 		unsigned int _x, _y;
 	};
@@ -1076,7 +1076,7 @@ void HTMRL::learnSpatial(sys::ComputeSystem &cs, float columnConnectionAlpha, fl
 	int prevLayerHeight = _inputHeight;
 
 	for (int l = 0; l < _layers.size(); l++) {
-		learnLayerSpatial(cs, _layers[l], *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layerDescs[l + 1]._width, _layerDescs[l + 1]._width, _layerDescs[l], columnConnectionAlpha, widthAlpha, generator);
+		learnLayerSpatial(cs, _layers[l], *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layerDescs[l], columnConnectionAlpha, widthAlpha, generator);
 
 		pPrevLayerOutput = &_layers[l]._columnStates;
 		prevLayerWidth = _layerDescs[l]._width;
@@ -1243,7 +1243,7 @@ float HTMRL::getQ(sys::ComputeSystem &cs) {
 	cs.getQueue().enqueueNDRangeKernel(_weighOutputKernel, cl::NullRange, cl::NDRange(_layerDescs.back()._width, _layerDescs.back()._height));
 
 	// Read partial sums and combine them
-	float totalSum = _outputBias;
+	float totalSum = 0.0f;// _outputBias;
 
 	std::vector<float> partialSums(_layerDescs.back()._width * _layerDescs.back()._height);
 
@@ -1803,43 +1803,42 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 
 	float tdError = alpha * (newQ - _prevValue);
 
-	if (tdError > 0.0f) {
-		activate(learnInputExploratory, cs, false, seed);
-		learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, cellConnectionAlpha * tdError, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, seed + 1);
-
-		//std::vector<float> recon;
-		//getReconstructedPrevPrediction(recon, cs);
-		//learnReconstruction(cs, reconstructionAlpha);
-
-		activate(_input, cs, true, seed);
-	}
-	else {
-		activate(learnInputMaxQ, cs, false, seed);
-		learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, cellConnectionAlpha * tdError, 0.0f, cellConnectionTemperature, cellWeightEligibilityDecay, seed + 1);
-
-		//std::vector<float> recon;
-		//getReconstructedPrevPrediction(recon, cs);
-		//learnReconstruction(cs, reconstructionAlpha);
-
-		activate(_input, cs, true, seed);
-	}
-
-	nodeActivate(_input, cs);
-
-	_prevValue = getQ(cs);
-
-	std::vector<float> recon;
-	getReconstruction(recon, cs);
-	learnReconstruction(cs, reconstructionAlpha);
-
-	std::cout << "Q: " << newQ << " Err: " << tdError << std::endl;
-
-	backpropagate(cs, 1.0f);
-
 	if (tdError > maxTdError)
 		tdError = maxTdError;
 	else if (tdError < -maxTdError)
 		tdError = -maxTdError;
+
+	learnSpatial(cs, columnConnectionAlpha, widthAlpha, seed + 1);
+
+	if (tdError > 0.0f) {
+		activate(learnInputExploratory, cs, false, seed);
+		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);
+
+		std::vector<float> recon;
+		getReconstructedPrevPrediction(recon, cs);
+		learnReconstruction(cs, reconstructionAlpha);
+	}
+	else {
+		activate(learnInputMaxQ, cs, false, seed);
+		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);
+
+		std::vector<float> recon;
+		getReconstructedPrevPrediction(recon, cs);
+		learnReconstruction(cs, reconstructionAlpha);
+	}
+
+	activate(_input, cs, true, seed);
+	nodeActivate(_input, cs);
+
+	_prevValue = getQ(cs);
+
+	//std::vector<float> recon;
+	//getReconstruction(recon, cs);
+	//learnReconstruction(cs, reconstructionAlpha);
+
+	std::cout << "Q: " << newQ << " Err: " << tdError << std::endl;
+
+	backpropagate(cs, 1.0f);
 
 	nodeLearn(cs, tdError, outputAlpha, outputBeta, outputTemperature, nodeEligibilityDecay);
 
@@ -2059,7 +2058,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		region[1] = _layerDescs[l]._height;
 		region[2] = _layerDescs[l]._cellsInColumn;
 
-		cs.getQueue().enqueueReadImage(_layers[l]._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cs.getQueue().enqueueReadImage(_layers[l]._cellPredictions , CL_TRUE, origin, region, 0, 0, &state[0]);
 
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
