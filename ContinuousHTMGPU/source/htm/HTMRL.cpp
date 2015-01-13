@@ -1746,6 +1746,68 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 
 	for (int i = 0; i < _input.size(); i++)
 	if (_inputTypes[i] == _action)
+		_input[i] = std::min<float>(1.0f, std::max<float>(0.0f, _prevOutputExploratory[i]));
+	else if (_inputTypes[i] == _unused)
+		_input[i] = 0.0f;
+
+	activate(_input, cs, true, seed);
+	nodeActivate(_input, cs);
+
+	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
+	
+	getReconstructedPrediction(_output, cs);
+
+	// Exploratory action
+	std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
+	std::normal_distribution<float> pertDist(0.0f, perturbationStdDev);
+
+	for (int i = 0; i < _output.size(); i++)
+	if (_inputTypes[i] == _action) {
+		if (dist01(generator) < breakChance)
+			_exploratoryOutput[i] = dist01(generator);
+		else
+			_exploratoryOutput[i] = std::min<float>(1.0f, std::max<float>(0.0f, std::min<float>(1.0f, std::max<float>(0.0f, _output[i])) + pertDist(generator)));
+	}
+	else
+		_exploratoryOutput[i] = _input[i];
+
+	float value = getQ(cs);
+
+	float newQ = reward + gamma * value;
+
+	float tdError = alpha * (newQ - _prevValue);
+
+	float q = _prevValue + tdError;
+
+	learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, tdError > 0.0f ? cellConnectionAlpha : 0.0f, 1.0f, seed + 1);
+
+	std::vector<float> recon;
+	getReconstructedPrevPrediction(recon, cs);
+	learnReconstruction(cs, reconstructionAlpha);
+
+	std::cout << "Q: " << q << " Err: " << tdError << std::endl;
+
+	backpropagate(cs, 1.0f);
+
+	if (tdError > maxTdError)
+		tdError = maxTdError;
+	else if (tdError < -maxTdError)
+		tdError = -maxTdError;
+
+	nodeLearn(cs, tdError, outputAlpha, outputBeta, outputTemperature, nodeEligibilityDecay);
+
+	_prevOutput = _output;
+	_prevOutputExploratory = _exploratoryOutput;
+	_prevValue = value;
+
+	/*stepBegin();
+
+	std::uniform_int_distribution<int> seedDist(0, 10000);
+
+	unsigned long seed = seedDist(generator);
+
+	for (int i = 0; i < _input.size(); i++)
+	if (_inputTypes[i] == _action)
 		_input[i] = std::min<float>(1.0f, std::max<float>(0.0f, _output[i]));
 	else if (_inputTypes[i] == _unused)
 		_input[i] = 0.0f;
@@ -1764,7 +1826,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 	std::cout << "Start" << std::endl;
 
 	std::normal_distribution<float> deriveQMutationDist(0.0f, deriveQMutationStdDev);
-	
+
 	float maxQ = getQ(cs);
 
 	std::vector<float> suggestedInputs;
@@ -1818,8 +1880,8 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 			_exploratoryOutput[i] = dist01(generator);
 		else
 			_exploratoryOutput[i] = std::min<float>(1.0f, std::max<float>(0.0f, _output[i] + pertDist(generator)));
-		
-		_input[i] = _exploratoryOutput[i];
+
+			_input[i] = _exploratoryOutput[i];
 	}
 	else
 		_exploratoryOutput[i] = _input[i];
@@ -1858,7 +1920,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 
 	_prevOutput = _output;
 	_prevOutputExploratory = _exploratoryOutput;
-	_prevValue = value;
+	_prevValue = value;*/
 }
 
 void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<sf::Image>> &images, unsigned long seed) const {
@@ -1951,7 +2013,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		region[1] = _layerDescs[l]._height;
 		region[2] = _layerDescs[l]._cellsInColumn;
 
-		cs.getQueue().enqueueReadImage(_layers[l]._cellPredictions, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cs.getQueue().enqueueReadImage(_layers[l]._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
