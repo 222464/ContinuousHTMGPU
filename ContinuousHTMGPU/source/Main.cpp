@@ -170,13 +170,13 @@ int main() {
 		}
 	}
 
-	for (int x = 27; x < 36; x++) {
-		for (int y = 46; y < 55; y++) {
+	for (int x = 29; x < 34; x++) {
+		for (int y = 48; y < 53; y++) {
 			inputTypes[x + y * 64] = htm::HTMRL::_action;
 		}
 	}
 
-	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, 4, -0.05f, 0.05f, -0.2f, 0.2f, 0.05f, 1.0f, generator);
+	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, 5, -0.05f, 0.05f, -0.2f, 0.2f, 0.05f, 1.0f, generator);
 
 	sf::RenderTexture htmRT;
 	htmRT.create(1024, 1024, false);
@@ -241,13 +241,13 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.005f, 0.05f, 2.0f, 0.02f, 0.01f, 0.05f, 0.2f, 0.05f, 2.0f, 0.05f, 1.0f, 0.01f, 0.1f, 0.0f, 3, 0.0f, 100.0f, 0.2f, 0.7f, 0.6f, 0.5f, 0.995f, 0.0f, 0.08f, 0.1f, 10.0f, generator);
+		agent.step(cs, reward, 0.001f, 0.05f, 2.0f, 0.02f, 0.001f, 0.05f, 0.5f, 0.05f, 2.0f, 0.05f, 1.0f, 0.01f, 0.2f, 0.0f, 3, 0.0f, 100.0f, 0.2f, 0.7f, 0.6f, 0.5f, 0.995f, 0.0f, 0.08f, 0.1f, 10.0f, generator);
 
 		float output = 0.0f;
 		int c = 0;
 
-		for (int x = 27; x < 36; x++) {
-			for (int y = 46; y < 55; y++) {
+		for (int x = 29; x < 34; x++) {
+			for (int y = 48; y < 53; y++) {
 				output += agent.getOutput(x, y);
 				c++;
 			}
@@ -255,7 +255,7 @@ int main() {
 
 		output /= c;
 
-		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, 2.0f * (output * 2.0f - 1.0f)));
+		float dir = std::min<float>(1.0f, std::max<float>(-1.0f, 1.2f * (output * 2.0f - 1.0f)));
 
 		//std::cout << dir << std::endl;
 
