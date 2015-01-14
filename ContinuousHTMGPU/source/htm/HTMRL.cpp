@@ -1344,6 +1344,10 @@ void HTMRL::layerNodeBackpropagate(sys::ComputeSystem &cs, Layer &layer, Layer &
 		float _x, _y;
 	};
 
+	Int2 layerSizeMinusOne;
+	layerSizeMinusOne._x = layerDesc._width - 1;
+	layerSizeMinusOne._y = layerDesc._height - 1;
+
 	Float2 layerSizeMinusOneInv;
 	layerSizeMinusOneInv._x = 1.0f / (layerDesc._width - 1);
 	layerSizeMinusOneInv._y = 1.0f / (layerDesc._height - 1);
@@ -1359,13 +1363,13 @@ void HTMRL::layerNodeBackpropagate(sys::ComputeSystem &cs, Layer &layer, Layer &
 	Int2 nextNodeFieldSize;
 	nextNodeFieldSize._x = nextNodeFieldSize._y = nextDesc._receptiveFieldRadius;
 
-	Float2 nextOverReverseNodeFieldSize;
-	nextOverReverseNodeFieldSize._x = static_cast<float>(nextDesc._receptiveFieldRadius * 2 + 1) / (reverseNodeFieldSize._x * 2 + 1);
-	nextOverReverseNodeFieldSize._y = static_cast<float>(nextDesc._receptiveFieldRadius * 2 + 1) / (reverseNodeFieldSize._y * 2 + 1);
-
 	Int2 nextLayerSizeMinusOne;
 	nextLayerSizeMinusOne._x = nextDesc._width - 1;
 	nextLayerSizeMinusOne._y = nextDesc._height - 1;
+
+	Float2 nextLayerSizeMinusOneInv;
+	nextLayerSizeMinusOneInv._x = 1.0f / (nextDesc._width - 1);
+	nextLayerSizeMinusOneInv._y = 1.0f / (nextDesc._height - 1);
 
 	_layerNodeBackpropagateKernel.setArg(0, nextLayer._nodeErrors);
 	_layerNodeBackpropagateKernel.setArg(1, nextLayer._nodeWeightsPrev);
@@ -1373,13 +1377,14 @@ void HTMRL::layerNodeBackpropagate(sys::ComputeSystem &cs, Layer &layer, Layer &
 	_layerNodeBackpropagateKernel.setArg(3, layer._cellStates);
 	_layerNodeBackpropagateKernel.setArg(4, layer._nodeErrors);
 	_layerNodeBackpropagateKernel.setArg(5, layerDesc._cellsInColumn);
-	_layerNodeBackpropagateKernel.setArg(6, layerSizeMinusOneInv);
-	_layerNodeBackpropagateKernel.setArg(7, nextLayerSize);
-	_layerNodeBackpropagateKernel.setArg(8, nextLayerSizeMinusOne);
-	_layerNodeBackpropagateKernel.setArg(9, nextDesc._cellsInColumn);
-	_layerNodeBackpropagateKernel.setArg(10, reverseNodeFieldSize);
-	_layerNodeBackpropagateKernel.setArg(11, nextNodeFieldSize);
-	_layerNodeBackpropagateKernel.setArg(12, nextOverReverseNodeFieldSize);
+	_layerNodeBackpropagateKernel.setArg(6, layerSizeMinusOne);
+	_layerNodeBackpropagateKernel.setArg(7, layerSizeMinusOneInv);
+	_layerNodeBackpropagateKernel.setArg(8, nextLayerSize);
+	_layerNodeBackpropagateKernel.setArg(9, nextLayerSizeMinusOne);
+	_layerNodeBackpropagateKernel.setArg(10, nextLayerSizeMinusOneInv);
+	_layerNodeBackpropagateKernel.setArg(11, nextDesc._cellsInColumn);
+	_layerNodeBackpropagateKernel.setArg(12, reverseNodeFieldSize);
+	_layerNodeBackpropagateKernel.setArg(13, nextNodeFieldSize);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerNodeBackpropagateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 }
@@ -1404,6 +1409,10 @@ void HTMRL::layerNodeBackpropagateToInput(sys::ComputeSystem &cs) {
 		float _x, _y;
 	};
 
+	Int2 layerSizeMinusOne;
+	layerSizeMinusOne._x = _inputWidth - 1;
+	layerSizeMinusOne._y = _inputHeight - 1;
+
 	Float2 layerSizeMinusOneInv;
 	layerSizeMinusOneInv._x = 1.0f / (_inputWidth - 1);
 	layerSizeMinusOneInv._y = 1.0f / (_inputHeight - 1);
@@ -1427,17 +1436,22 @@ void HTMRL::layerNodeBackpropagateToInput(sys::ComputeSystem &cs) {
 	nextLayerSizeMinusOne._x = _layerDescs.front()._width - 1;
 	nextLayerSizeMinusOne._y = _layerDescs.front()._height - 1;
 
+	Float2 nextLayerSizeMinusOneInv;
+	nextLayerSizeMinusOneInv._x = 1.0f / (_layerDescs.front()._width - 1);
+	nextLayerSizeMinusOneInv._y = 1.0f / (_layerDescs.front()._height - 1);
+
 	_layerNodeBackpropagateToInputKernel.setArg(0, _layers.front()._nodeErrors);
 	_layerNodeBackpropagateToInputKernel.setArg(1, _layers.front()._nodeWeightsPrev);
 	_layerNodeBackpropagateToInputKernel.setArg(2, _inputImage);
 	_layerNodeBackpropagateToInputKernel.setArg(3, _inputErrors);
-	_layerNodeBackpropagateToInputKernel.setArg(4, layerSizeMinusOneInv);
-	_layerNodeBackpropagateToInputKernel.setArg(5, nextLayerSize);
-	_layerNodeBackpropagateToInputKernel.setArg(6, nextLayerSizeMinusOne);
-	_layerNodeBackpropagateToInputKernel.setArg(7, _layerDescs.front()._cellsInColumn);
-	_layerNodeBackpropagateToInputKernel.setArg(8, reverseNodeFieldSize);
-	_layerNodeBackpropagateToInputKernel.setArg(9, nextNodeFieldSize);
-	_layerNodeBackpropagateToInputKernel.setArg(10, nextOverReverseNodeFieldSize);
+	_layerNodeBackpropagateToInputKernel.setArg(4, layerSizeMinusOne);
+	_layerNodeBackpropagateToInputKernel.setArg(5, layerSizeMinusOneInv);
+	_layerNodeBackpropagateToInputKernel.setArg(6, nextLayerSize);
+	_layerNodeBackpropagateToInputKernel.setArg(7, nextLayerSizeMinusOne);
+	_layerNodeBackpropagateToInputKernel.setArg(8, nextLayerSizeMinusOneInv);
+	_layerNodeBackpropagateToInputKernel.setArg(9, _layerDescs.front()._cellsInColumn);
+	_layerNodeBackpropagateToInputKernel.setArg(10, reverseNodeFieldSize);
+	_layerNodeBackpropagateToInputKernel.setArg(11, nextNodeFieldSize);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerNodeBackpropagateToInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
 }
@@ -1819,7 +1833,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);
 
 		std::vector<float> recon;
-		getReconstruction(recon, cs);
+		getReconstructedPrevPrediction(recon, cs);
 		learnReconstruction(cs, reconstructionAlpha);
 	}
 	else {
@@ -1827,8 +1841,8 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);
 
 		std::vector<float> recon;
-		getReconstructedPrevPrediction(recon, cs);
-		learnReconstruction(cs, reconstructionAlpha);
+		getReconstruction(recon, cs);
+		learnReconstruction(cs, reconstructionAlpha);		
 	}
 
 	activate(_input, cs, true, seed);
@@ -1940,7 +1954,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 
 	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
 
-	learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, cellConnectionAlpha, 1.0f, seed + 1);
+	learnSpatialTemporal(cs, columnConnectionAlpha, widthAlpha, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 1);
 
 	std::vector<float> recon;
 	getReconstructedPrevPrediction(recon, cs);
@@ -1998,7 +2012,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		region[1] = _inputHeight;
 		region[2] = 1;
 
-		cs.getQueue().enqueueReadImage(_reconstruction, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cs.getQueue().enqueueReadImage(_inputImage, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
