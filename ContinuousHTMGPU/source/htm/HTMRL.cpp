@@ -1818,17 +1818,17 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 		activate(learnInputExploratory, cs, false, seed);
 		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);
 
-		//std::vector<float> recon;
-		//getReconstruction(recon, cs);
-		//learnReconstruction(cs, reconstructionAlpha);
+		std::vector<float> recon;
+		getReconstruction(recon, cs);
+		learnReconstruction(cs, reconstructionAlpha);
 	}
 	else {
 		activate(learnInputMaxQ, cs, false, seed);
 		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);
 
-		//std::vector<float> recon;
-		//getReconstructedPrevPrediction(recon, cs);
-		//learnReconstruction(cs, reconstructionAlpha);
+		std::vector<float> recon;
+		getReconstructedPrevPrediction(recon, cs);
+		learnReconstruction(cs, reconstructionAlpha);
 	}
 
 	activate(_input, cs, true, seed);
@@ -1836,9 +1836,9 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 
 	_prevValue = getQ(cs);
 
-	std::vector<float> recon;
-	getReconstruction(recon, cs);
-	learnReconstruction(cs, reconstructionAlpha);
+	//std::vector<float> recon;
+	//getReconstruction(recon, cs);
+	//learnReconstruction(cs, reconstructionAlpha);
 
 	std::cout << "Q: " << newQ << " Err: " << tdError << std::endl;
 

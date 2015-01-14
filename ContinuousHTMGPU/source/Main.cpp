@@ -139,7 +139,7 @@ int main() {
 
 	layerDescs[0]._width = 64;
 	layerDescs[0]._height = 64;
-	layerDescs[0]._inhibitionRadius = 3;
+	layerDescs[0]._inhibitionRadius = 4;
 	layerDescs[0]._qInfluenceMultiplier = 0.2f;
 
 	//layerDescs[1]._width = 44;
@@ -149,17 +149,17 @@ int main() {
 
 	layerDescs[1]._width = 44;
 	layerDescs[1]._height = 44;
-	layerDescs[1]._inhibitionRadius = 3;
+	layerDescs[1]._inhibitionRadius = 4;
 	layerDescs[1]._qInfluenceMultiplier = 0.5f;
 
 	layerDescs[2]._width = 32;
 	layerDescs[2]._height = 32;
-	layerDescs[2]._inhibitionRadius = 3;
+	layerDescs[2]._inhibitionRadius = 4;
 	layerDescs[2]._qInfluenceMultiplier = 1.0f;
 
 	layerDescs[3]._width = 20;
 	layerDescs[3]._height = 20;
-	layerDescs[3]._inhibitionRadius = 3;
+	layerDescs[3]._inhibitionRadius = 4;
 	layerDescs[3]._qInfluenceMultiplier = 1.0f;
 
 	std::vector<htm::HTMRL::InputType> inputTypes(64 * 64, htm::HTMRL::_state);
@@ -170,10 +170,21 @@ int main() {
 		}
 	}
 
-	for (int x = 29; x < 34; x++) {
-		for (int y = 48; y < 53; y++) {
-			inputTypes[x + y * 64] = htm::HTMRL::_action;
-		}
+	std::uniform_int_distribution<int> actionXDist(0, 63);
+	std::uniform_int_distribution<int> actionYDist(33, 63);
+
+	std::vector<int> actionIndices;
+
+	for (int i = 0; i < 8; i++) {
+		int x = actionXDist(generator);
+		int y = actionYDist(generator);
+
+		if (inputTypes[x + y * 64] == htm::HTMRL::_action)
+			continue;
+
+		inputTypes[x + y * 64] = htm::HTMRL::_action;
+
+		actionIndices.push_back(x + y * 64);
 	}
 
 	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, 5, -0.05f, 0.05f, -0.2f, 0.2f, 0.05f, 1.0f, generator);
@@ -241,16 +252,14 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.001f, 0.05f, 2.0f, 0.02f, 0.001f, 0.05f, 0.5f, 0.05f, 2.0f, 0.05f, 1.0f, 0.01f, 0.2f, 0.0f, 3, 0.0f, 100.0f, 0.2f, 0.7f, 0.6f, 0.5f, 0.995f, 0.0f, 0.08f, 0.1f, 10.0f, generator);
+		agent.step(cs, reward, 0.01f, 0.01f, 6.0f, 0.02f, 0.01f, 0.05f, 0.3f, 0.01f, 6.0f, 0.05f, 1.0f, 0.01f, 0.05f, 0.0f, 3, 0.0f, 100.0f, 0.2f, 0.7f, 0.6f, 0.5f, 0.995f, 0.0f, 0.08f, 0.1f, 10.0f, generator);
 
 		float output = 0.0f;
 		int c = 0;
 
-		for (int x = 29; x < 34; x++) {
-			for (int y = 48; y < 53; y++) {
-				output += agent.getOutput(x, y);
-				c++;
-			}
+		for (int i = 0; i < actionIndices.size(); i++) {
+			output += agent.getOutput(actionIndices[i]);
+			c++;
 		}
 
 		output /= c;

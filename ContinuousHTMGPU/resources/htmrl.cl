@@ -27,8 +27,8 @@ constant float cellStateIntensity = 16.0f;
 constant float cellPredictionIntensity = 4.0f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
-constant float localActivity = 2.0f;
-constant float crowdingActivity = 3.0f;
+constant float localActivity = 3.0f;
+constant float crowdingActivity = 6.0f;
 constant float uniquenessPower = 4.0f;
 constant float minOverlapForActivation = 0.0f;
 constant float subOverlapIncrement = 0.0005f;
@@ -39,7 +39,7 @@ constant float widthScalar = 1.0f;
 constant float minWidth = 0.0001f;
 constant float minBoostThreshold = 0.0001f;
 constant float nodeOutputIntensity = 1.0f;
-constant float rectifierLeak = 0.001f;
+constant float rectifierLeak = 0.05f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -280,7 +280,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 	
 	float boost = boostFunction(dutyCyclePrev.x, boostDutyCycleRatio);
 	
-	float error = dutyCyclePrev.y * ((1.0f - boost) * thisState.x + boost - thisActivation.x);//dutyCyclePrev.y) * ((1.0f - boost) * thisState.x + boost - thisActivation.x);
+	float error = (1.0f - thisState.x) * dutyCyclePrev.y * ((1.0f - boost) * thisState.x + boost - thisActivation.x);//dutyCyclePrev.y) * ((1.0f - boost) * thisState.x + boost - thisActivation.x);
 	
 	// Adjust weights by their source activations and error
 	int weightIndex = 0;
@@ -859,7 +859,7 @@ void kernel layerNodeWeightUpdate(read_only image3d_t layerNodeErrors, read_only
 		
 		float2 biasPrev = read_imagef(nodeBiasesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		
-		float2 newBias = (float2)(biasPrev.x + alpha * biasPrev.y, (1.0f - eligibilityDecay) * biasPrev.y + beta * exp(-temperature * fabs(error)) * error);
+		float2 newBias = (float2)(biasPrev.x + alpha * biasPrev.y, (1.0f - eligibilityDecay) * biasPrev.y + beta * exp(-temperature * fabs(biasPrev.y)) * error);
 		
 		write_imagef(nodeBiases, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newBias.x, newBias.y, 0.0f, 0.0f));
 	}
@@ -904,7 +904,7 @@ void kernel layerNodeWeightUpdateFirst(read_only image3d_t layerNodeErrors, read
 		
 		float2 biasPrev = read_imagef(nodeBiasesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		
-		float2 newBias = (float2)(biasPrev.x + alpha * biasPrev.y, (1.0f - eligibilityDecay) * biasPrev.y + beta * exp(-temperature * fabs(error)) * error);
+		float2 newBias = (float2)(biasPrev.x + alpha * biasPrev.y, (1.0f - eligibilityDecay) * biasPrev.y + beta * exp(-temperature * fabs(biasPrev.y)) * error);
 		
 		write_imagef(nodeBiases, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newBias.x, newBias.y, 0.0f, 0.0f));
 	}
@@ -918,7 +918,7 @@ void kernel layerNodeWeightUpdateLast(read_only image3d_t statesInput, read_only
 		
 		float2 weightPrev = read_imagef(weightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		
-		float2 newWeight = (float2)(weightPrev.x + alpha * weightPrev.y, (1.0f - eligibilityDecay) * weightPrev.y + beta * exp(-temperature * fabs(nodeState)) * nodeState);
+		float2 newWeight = (float2)(weightPrev.x + alpha * weightPrev.y, (1.0f - eligibilityDecay) * weightPrev.y + beta * exp(-temperature * fabs(weightPrev.y)) * nodeState);
 		
 		write_imagef(weights, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newWeight.x, newWeight.y, 0.0f, 0.0f));
 	}
@@ -963,9 +963,9 @@ void kernel reconstructInput(read_only image3d_t reconstructionWeights, read_onl
 	}
 
 	// Bias
-	//float bias = read_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
+	float bias = read_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
 		
-	//sum += bias;
+	sum += bias;
 
 	float output = sum;
 	
@@ -1004,9 +1004,9 @@ void kernel learnReconstruction(read_only image2d_t targets, read_only image2d_t
  	}
  	
  	// Bias
-	//float prevBias = read_imagef(reconstructionWeightsPrev, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
+	float prevBias = read_imagef(reconstructionWeightsPrev, (int4)(columnPosition.x, columnPosition.y, wi, 0)).x;
  		
- 	//float newBias = prevBias + error;
+ 	float newBias = prevBias + error;
  	
- 	//write_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0), (float4)(newBias, newBias, newBias, newBias));
+ 	write_imagef(reconstructionWeights, (int4)(columnPosition.x, columnPosition.y, wi, 0), (float4)(newBias, newBias, newBias, newBias));
  }
