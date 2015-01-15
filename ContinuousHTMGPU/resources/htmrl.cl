@@ -21,10 +21,10 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 constant float columnIntensity = 8.0f;
 constant float valueSensitivityPower = 4.0f;
 constant float learnIntensity = 0.3f;
-constant float noMatchIntensity = 3.0f;
+constant float noMatchIntensity = 100.0f;
 constant float modulationPower = 2.0f;
 constant float crowdingIntensity = 4.0f;
-constant float cellStateIntensity = 8.0f;
+constant float cellStateIntensity = 32.0f;
 constant float cellPredictionIntensity = 4.0f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
@@ -339,7 +339,11 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 	
 	float columnState = read_imagef(columnStates, columnPosition).x;
 	
-	/*float maxSharpenedPrediction = 0.0f;
+	float maxSharpenedPrediction = 0.0f;
+	
+	float highestPrediction = 0.0f;
+	
+	int highestPredictionCell = 0;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float prediction = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
@@ -347,6 +351,12 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 		float sharpenedPrediction = pow(prediction, cellStateIntensity);
 		
 		maxSharpenedPrediction = fmax(maxSharpenedPrediction, sharpenedPrediction);
+		
+		if (prediction > highestPrediction) {
+			highestPrediction = prediction;
+			
+			highestPredictionCell = ci;
+		}
 	}
 	
 	float allPossibilitiesIncrease = 1.0f - maxSharpenedPrediction;
@@ -358,17 +368,9 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 		
 		float newCellState = ((1.0f - allPossibilitiesIncrease) * sharpenedPrediction + allPossibilitiesIncrease) * columnState;
 	
-		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellState, newCellState, newCellState, newCellState));
-	}*/
+		float learnState = ci == highestPredictionCell ? 1.0f : 0.0f;
 	
-	float maxPrediction = read_imagef(columnPredictionsPrev, columnPosition).x;
-	
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float prediction = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		float newCellState = exp((prediction - maxPrediction) * cellStateIntensity) * columnState;
-	
-		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellState, newCellState, newCellState, newCellState));
+		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellState, learnState, 0.0f, 0.0f));
 	}
 }
 
@@ -383,15 +385,15 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 	float columnState = read_imagef(columnStates, columnPosition).x;
 	float columnPredictionPrev = read_imagef(columnPredictionsPrev, columnPosition).x;
 	
-	//float predictionError = columnState - columnPredictionPrev;// * (columnPredictionPrev * 0.5f + 0.5f) * (1.0f - (columnPredictionPrev * 0.5f + 0.5f));
+	//float predictionError = columnState - columnPredictionPrev;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
 		
-		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		float2 cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		float cellPredictionPrev = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		float cellError = cellState - cellPredictionPrev;
+		float cellError = cellState.y * (columnState - cellPredictionPrev);
 		
 		// Go through all connections and update them
 		int wi = 0;
@@ -472,15 +474,15 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 	float columnState = read_imagef(columnStates, columnPosition).x;
 	float columnPredictionPrev = read_imagef(columnPredictionsPrev, columnPosition).x;
 	
-	//float predictionError = columnState - columnPredictionPrev;// * (columnPredictionPrev * 0.5f + 0.5f) * (1.0f - (columnPredictionPrev * 0.5f + 0.5f));
+	//float predictionError = columnState - columnPredictionPrev;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
 		
-		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		float2 cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		float cellPredictionPrev = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		float cellError = cellState - cellPredictionPrev;
+		float cellError = cellState.y * (columnState - cellPredictionPrev);
 		
 		// Go through all connections and update them
 		int wi = 0;
@@ -587,7 +589,7 @@ void kernel layerCellPredict(read_only image2d_t columnStates, read_only image3d
 		
 		sum += bias;*/
 		
-		float prediction = fmin(1.0f, fmax(0.0f, sum * cellPredictionIntensity));
+		float prediction = fmax(0.0f, sigmoid(sum * cellPredictionIntensity) * 2.0f - 1.0f);
 		
 		write_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(prediction, prediction, prediction, prediction));
 	}
@@ -633,7 +635,7 @@ void kernel layerCellPredictLast(read_only image2d_t columnStates, read_only ima
 		
 		sum += bias;*/
 		
-		float prediction = fmin(1.0f, fmax(0.0f, sum * cellPredictionIntensity));
+		float prediction = fmax(0.0f, sigmoid(sum * cellPredictionIntensity) * 2.0f - 1.0f);
 		
 		write_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(prediction, prediction, prediction, prediction));
 	}
