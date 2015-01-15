@@ -35,9 +35,14 @@ namespace htm {
 
 			float _nodeAlpha;
 
+			float _noMatchIntensity;
+
+			int _numBlurPasses;
+			float _blurKernelWidthMuliplier;
+
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(4), _lateralConnectionRadius(4), _inhibitionRadius(2), _dutyCycleRadius(4), _cellsInColumn(4),
-				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.05f)
+				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(4), _lateralConnectionRadius(5), _inhibitionRadius(2), _dutyCycleRadius(4), _cellsInColumn(4),
+				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.05f), _noMatchIntensity(8.0f), _numBlurPasses(2), _blurKernelWidthMuliplier(1.0f)
 			{}
 		};
 
@@ -79,6 +84,9 @@ namespace htm {
 
 			cl::Image3D _nodeWeightsPrev;
 			cl::Image3D _nodeWeights;
+
+			cl::Image2D _blurredLayerOutputsPing;
+			cl::Image2D _blurredLayerOutputsPong;
 		};
 
 		int _inputWidth, _inputHeight;
@@ -107,6 +115,10 @@ namespace htm {
 		cl::Kernel _layerNodeWeightUpdateKernel;
 		cl::Kernel _layerNodeWeightUpdateFirstKernel;
 		cl::Kernel _layerNodeWeightUpdateLastKernel;
+
+		// For blur
+		cl::Kernel _gaussianBlurXKernel;
+		cl::Kernel _gaussianBlurYKernel;
 
 		// For reconstruction
 		cl::Kernel _reconstructInputKernel;
@@ -184,6 +196,9 @@ namespace htm {
 		void getReconstruction(std::vector<float> &reconstruction, sys::ComputeSystem &cs);
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
 		void getReconstructedPrevPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
+
+		// Blur
+		void gaussianBlur(sys::ComputeSystem &cs, cl::Image2D &source, cl::Image2D &ping, cl::Image2D &pong, int imageSizeX, int imageSizeY, int passes, float kernelWidth);
 
 	public:
 		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator);

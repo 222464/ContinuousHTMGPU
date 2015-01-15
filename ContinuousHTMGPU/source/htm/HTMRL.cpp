@@ -141,6 +141,9 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	_layerNodeWeightUpdateFirstKernel = cl::Kernel(program.getProgram(), "layerNodeWeightUpdateFirst");
 	_layerNodeWeightUpdateLastKernel = cl::Kernel(program.getProgram(), "layerNodeWeightUpdateLast");
 
+	_gaussianBlurXKernel = cl::Kernel(program.getProgram(), "gaussianBlurX");
+	_gaussianBlurYKernel = cl::Kernel(program.getProgram(), "gaussianBlurY");
+
 	_reconstructInputKernel = cl::Kernel(program.getProgram(), "reconstructInput");
 }
 
@@ -196,6 +199,9 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 
 	layer._nodeWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height * layerDesc._cellsInColumn, nodeConnectionsSize);
 	layer._nodeWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height * layerDesc._cellsInColumn, nodeConnectionsSize);
+
+	layer._blurredLayerOutputsPing = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
+	layer._blurredLayerOutputsPong = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
 
 	Uint2 seed1;
 	seed1._x = uniformDist(generator);
@@ -476,6 +482,7 @@ void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, 
 	_layerColumnInhibitKernel.setArg(3, layerSize);
 	_layerColumnInhibitKernel.setArg(4, layerSizeInv);
 	_layerColumnInhibitKernel.setArg(5, layerInhibitionRadius);
+	_layerColumnInhibitKernel.setArg(6, layerDesc._noMatchIntensity);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerColumnInhibitKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
@@ -623,8 +630,11 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, bool pre
 
 	for (int l = 0; l < _layers.size(); l++) {
 		activateLayer(cs, *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layers[l], _layerDescs[l], generator);
+		
+		// Blur output
+		gaussianBlur(cs, _layers[l]._columnStates, _layers[l]._blurredLayerOutputsPing, _layers[l]._blurredLayerOutputsPong, _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._numBlurPasses, _layerDescs[l]._blurKernelWidthMuliplier);
 
-		pPrevLayerOutput = &_layers[l]._columnStates;
+		pPrevLayerOutput = &_layers[l]._blurredLayerOutputsPong;
 		prevLayerWidth = _layerDescs[l]._width;
 		prevLayerHeight = _layerDescs[l]._height;
 	}
@@ -1524,6 +1534,51 @@ void HTMRL::layerNodeWeightUpdateLast(sys::ComputeSystem &cs, float qError, floa
 	cs.getQueue().enqueueNDRangeKernel(_layerNodeWeightUpdateLastKernel, cl::NullRange, cl::NDRange(_layerDescs.back()._width, _layerDescs.back()._height));
 }
 
+void HTMRL::gaussianBlur(sys::ComputeSystem &cs, cl::Image2D &source, cl::Image2D &ping, cl::Image2D &pong, int imageSizeX, int imageSizeY, int passes, float kernelWidth) {
+	struct Int2 {
+		int _x, _y;
+	};
+
+	struct Float2 {
+		float _x, _y;
+	};
+
+	Float2 imageSizeInv;
+	imageSizeInv._x = 1.0f / imageSizeX;
+	imageSizeInv._y = 1.0f / imageSizeY;
+
+	// Blur source to ping
+	_gaussianBlurXKernel.setArg(0, source);
+	_gaussianBlurXKernel.setArg(1, ping);
+	_gaussianBlurXKernel.setArg(2, imageSizeInv);
+	_gaussianBlurXKernel.setArg(3, kernelWidth * imageSizeInv._x);
+
+	cs.getQueue().enqueueNDRangeKernel(_gaussianBlurXKernel, cl::NullRange, cl::NDRange(imageSizeX, imageSizeY));
+
+	for (int p = 0; p < passes - 1; p++) {
+		_gaussianBlurYKernel.setArg(0, ping);
+		_gaussianBlurYKernel.setArg(1, pong);
+		_gaussianBlurYKernel.setArg(2, imageSizeInv);
+		_gaussianBlurYKernel.setArg(3, kernelWidth * imageSizeInv._y);
+
+		cs.getQueue().enqueueNDRangeKernel(_gaussianBlurYKernel, cl::NullRange, cl::NDRange(imageSizeX, imageSizeY));
+
+		_gaussianBlurXKernel.setArg(0, pong);
+		_gaussianBlurXKernel.setArg(1, ping);
+		_gaussianBlurXKernel.setArg(2, imageSizeInv);
+		_gaussianBlurXKernel.setArg(3, kernelWidth * imageSizeInv._x);
+
+		cs.getQueue().enqueueNDRangeKernel(_gaussianBlurXKernel, cl::NullRange, cl::NDRange(imageSizeX, imageSizeY));
+	}
+
+	_gaussianBlurYKernel.setArg(0, ping);
+	_gaussianBlurYKernel.setArg(1, pong);
+	_gaussianBlurYKernel.setArg(2, imageSizeInv);
+	_gaussianBlurYKernel.setArg(3, kernelWidth * imageSizeInv._y);
+
+	cs.getQueue().enqueueNDRangeKernel(_gaussianBlurYKernel, cl::NullRange, cl::NDRange(imageSizeX, imageSizeY));
+}
+
 void HTMRL::getReconstruction(std::vector<float> &prediction, sys::ComputeSystem &cs) {
 	struct Int2 {
 		int _x, _y;
@@ -1794,17 +1849,17 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 	else if (tdError < -maxTdError)
 		tdError = -maxTdError;
 
-	if (reward > 0.0f) {
-		activate(learnInputExploratory, cs, false, seed);
-		learnSpatial(cs, columnConnectionAlpha, widthAlpha, seed + 1);
+	learnSpatial(cs, columnConnectionAlpha, widthAlpha, seed + 1);
 
+	if (tdError > 0.0f) {
+		activate(learnInputExploratory, cs, false, seed);
+		
 		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);
 
 		std::cout << "Exp" << std::endl;
 	}
 	else {
 		activate(learnInputMaxQ, cs, false, seed);
-		learnSpatial(cs, columnConnectionAlpha, widthAlpha, seed + 1);
 
 		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);	
 
