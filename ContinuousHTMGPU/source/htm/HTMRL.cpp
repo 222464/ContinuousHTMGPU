@@ -416,9 +416,13 @@ void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, 
 
 	std::uniform_int_distribution<int> uniformDist(0, 10000);
 
-	Uint2 seed;
-	seed._x = uniformDist(generator);
-	seed._y = uniformDist(generator);
+	Uint2 seed1;
+	seed1._x = uniformDist(generator);
+	seed1._y = uniformDist(generator);
+
+	Uint2 seed2;
+	seed2._x = uniformDist(generator);
+	seed2._y = uniformDist(generator);
 
 	Int2 inputSize;
 	inputSize._x = prevLayerWidth;
@@ -453,7 +457,7 @@ void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, 
 	_layerColumnActivateKernel.setArg(5, inputReceptiveFieldRadius);
 	_layerColumnActivateKernel.setArg(6, inputSize);
 	_layerColumnActivateKernel.setArg(7, inputSizeMinusOne);
-	_layerColumnActivateKernel.setArg(8, seed);
+	_layerColumnActivateKernel.setArg(8, seed1);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerColumnActivateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
@@ -490,6 +494,7 @@ void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, 
 	_layerCellActivateKernel.setArg(5, layer._cellStates);
 	_layerCellActivateKernel.setArg(6, layerDesc._cellsInColumn);
 	_layerCellActivateKernel.setArg(7, lateralConnectionRadii);
+	_layerCellActivateKernel.setArg(8, seed2);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerCellActivateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
@@ -680,16 +685,17 @@ void HTMRL::learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D 
 	_layerColumnWeightUpdateKernel.setArg(0, prevLayerOutput);
 	_layerColumnWeightUpdateKernel.setArg(1, layer._columnActivations);
 	_layerColumnWeightUpdateKernel.setArg(2, layer._columnStates);
-	_layerColumnWeightUpdateKernel.setArg(3, layer._columnWeightsPrev);
-	_layerColumnWeightUpdateKernel.setArg(4, layer._columnDutyCyclesPrev);
-	_layerColumnWeightUpdateKernel.setArg(5, layer._columnWeights);
-	_layerColumnWeightUpdateKernel.setArg(6, layerSizeMinusOneInv);
-	_layerColumnWeightUpdateKernel.setArg(7, inputReceptiveFieldRadius);
-	_layerColumnWeightUpdateKernel.setArg(8, inputSize);
-	_layerColumnWeightUpdateKernel.setArg(9, inputSizeMinusOne);
-	_layerColumnWeightUpdateKernel.setArg(10, columnConnectionAlpha);
-	_layerColumnWeightUpdateKernel.setArg(11, widthAlpha);
-	_layerColumnWeightUpdateKernel.setArg(12, seed);
+	_layerColumnWeightUpdateKernel.setArg(3, layer._columnStatesPrev);
+	_layerColumnWeightUpdateKernel.setArg(4, layer._columnWeightsPrev);
+	_layerColumnWeightUpdateKernel.setArg(5, layer._columnDutyCyclesPrev);
+	_layerColumnWeightUpdateKernel.setArg(6, layer._columnWeights);
+	_layerColumnWeightUpdateKernel.setArg(7, layerSizeMinusOneInv);
+	_layerColumnWeightUpdateKernel.setArg(8, inputReceptiveFieldRadius);
+	_layerColumnWeightUpdateKernel.setArg(9, inputSize);
+	_layerColumnWeightUpdateKernel.setArg(10, inputSizeMinusOne);
+	_layerColumnWeightUpdateKernel.setArg(11, columnConnectionAlpha);
+	_layerColumnWeightUpdateKernel.setArg(12, widthAlpha);
+	_layerColumnWeightUpdateKernel.setArg(13, seed);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerColumnWeightUpdateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
@@ -1788,17 +1794,17 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 	else if (tdError < -maxTdError)
 		tdError = -maxTdError;
 
-	learnSpatial(cs, columnConnectionAlpha, widthAlpha, seed + 1);
-
-	if (tdError > 0.0f) {
+	if (reward > 0.0f) {
 		activate(learnInputExploratory, cs, false, seed);
-	
+		learnSpatial(cs, columnConnectionAlpha, widthAlpha, seed + 1);
+
 		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);
 
 		std::cout << "Exp" << std::endl;
 	}
 	else {
 		activate(learnInputMaxQ, cs, false, seed);
+		learnSpatial(cs, columnConnectionAlpha, widthAlpha, seed + 1);
 
 		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);	
 
@@ -2019,49 +2025,98 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		images.push_back(image);
 	}*/
 
-	for (int l = 0; l < _layers.size(); l++) {
-		std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn * 2);
+	if (sf::Keyboard::isKeyPressed(sf::Keyboard::P)) {
+		for (int l = 0; l < _layers.size(); l++) {
+			std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn);
 
-		cl::size_t<3> origin;
-		origin[0] = 0;
-		origin[1] = 0;
-		origin[2] = 0;
+			cl::size_t<3> origin;
+			origin[0] = 0;
+			origin[1] = 0;
+			origin[2] = 0;
 
-		cl::size_t<3> region;
-		region[0] = _layerDescs[l]._width;
-		region[1] = _layerDescs[l]._height;
-		region[2] = _layerDescs[l]._cellsInColumn;
+			cl::size_t<3> region;
+			region[0] = _layerDescs[l]._width;
+			region[1] = _layerDescs[l]._height;
+			region[2] = _layerDescs[l]._cellsInColumn;
 
-		cs.getQueue().enqueueReadImage(_layers[l]._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
+			cs.getQueue().enqueueReadImage(_layers[l]._cellPredictions, CL_TRUE, origin, region, 0, 0, &state[0]);
 
-		sf::Color c;
-		c.r = uniformDist(generator) * 255.0f;
-		c.g = uniformDist(generator) * 255.0f;
-		c.b = uniformDist(generator) * 255.0f;
+			sf::Color c;
+			c.r = uniformDist(generator) * 255.0f;
+			c.g = uniformDist(generator) * 255.0f;
+			c.b = uniformDist(generator) * 255.0f;
 
-		// Convert to colors
-		for (int ci = 0; ci < _layerDescs[l]._cellsInColumn; ci++) {
-			std::shared_ptr<sf::Image> image = std::make_shared<sf::Image>();
+			// Convert to colors
+			for (int ci = 0; ci < _layerDescs[l]._cellsInColumn; ci++) {
+				std::shared_ptr<sf::Image> image = std::make_shared<sf::Image>();
 
-			image->create(maxWidth, maxHeight, sf::Color::Transparent);
+				image->create(maxWidth, maxHeight, sf::Color::Transparent);
 
-			for (int x = 0; x < _layerDescs[l]._width; x++)
-			for (int y = 0; y < _layerDescs[l]._height; y++) {
-				sf::Color color;
+				for (int x = 0; x < _layerDescs[l]._width; x++)
+				for (int y = 0; y < _layerDescs[l]._height; y++) {
+					sf::Color color;
 
-				color = c;
+					color = c;
 
-				color.a = std::min<float>(1.0f, std::max<float>(0.0f, state[2 * (x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width *_layerDescs[l]._height)])) * (255.0f - 3.0f) + 3;
+					color.a = std::min<float>(1.0f, std::max<float>(0.0f, state[(x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width *_layerDescs[l]._height)])) * (255.0f - 3.0f) + 3;
 
-				int wx = x - _layerDescs[l]._width / 2 + maxWidth / 2;
-				int wy = y - _layerDescs[l]._height / 2 + maxHeight / 2;
+					int wx = x - _layerDescs[l]._width / 2 + maxWidth / 2;
+					int wy = y - _layerDescs[l]._height / 2 + maxHeight / 2;
 
-				assert(wx >= 0 && wy >= 0 && wx < maxWidth && wy < maxHeight);
+					assert(wx >= 0 && wy >= 0 && wx < maxWidth && wy < maxHeight);
 
-				image->setPixel(wx, wy, color);
+					image->setPixel(wx, wy, color);
+				}
+
+				images.push_back(image);
 			}
+		}
+	}
+	else {
+		for (int l = 0; l < _layers.size(); l++) {
+			std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn * 2);
 
-			images.push_back(image);
+			cl::size_t<3> origin;
+			origin[0] = 0;
+			origin[1] = 0;
+			origin[2] = 0;
+
+			cl::size_t<3> region;
+			region[0] = _layerDescs[l]._width;
+			region[1] = _layerDescs[l]._height;
+			region[2] = _layerDescs[l]._cellsInColumn;
+
+			cs.getQueue().enqueueReadImage(_layers[l]._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
+
+			sf::Color c;
+			c.r = uniformDist(generator) * 255.0f;
+			c.g = uniformDist(generator) * 255.0f;
+			c.b = uniformDist(generator) * 255.0f;
+
+			// Convert to colors
+			for (int ci = 0; ci < _layerDescs[l]._cellsInColumn; ci++) {
+				std::shared_ptr<sf::Image> image = std::make_shared<sf::Image>();
+
+				image->create(maxWidth, maxHeight, sf::Color::Transparent);
+
+				for (int x = 0; x < _layerDescs[l]._width; x++)
+				for (int y = 0; y < _layerDescs[l]._height; y++) {
+					sf::Color color;
+
+					color = c;
+
+					color.a = std::min<float>(1.0f, std::max<float>(0.0f, state[2 * (x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width *_layerDescs[l]._height)])) * (255.0f - 3.0f) + 3;
+
+					int wx = x - _layerDescs[l]._width / 2 + maxWidth / 2;
+					int wy = y - _layerDescs[l]._height / 2 + maxHeight / 2;
+
+					assert(wx >= 0 && wy >= 0 && wx < maxWidth && wy < maxHeight);
+
+					image->setPixel(wx, wy, color);
+				}
+
+				images.push_back(image);
+			}
 		}
 	}
 }
