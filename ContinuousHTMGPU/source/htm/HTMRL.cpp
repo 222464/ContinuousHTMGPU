@@ -4,7 +4,7 @@
 
 using namespace htm;
 
-void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, int reconstructionReceptiveRadius, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator) {
+void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator) {
 	struct Uint2 {
 		unsigned int _x, _y;
 	};
@@ -118,43 +118,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	
 	_inputErrors = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _inputWidth, _inputHeight);
 
-	_reconstructionReceptiveRadius = reconstructionReceptiveRadius;// std::ceil(static_cast<float>(_layerDescs.front()._width) / static_cast<float>(_inputWidth)* static_cast<float>(_layerDescs.front()._receptiveFieldRadius));
-
-	int reconstructionNumWeights = std::pow(_reconstructionReceptiveRadius * 2 + 1, 2) + 1; // + 1 for bias
-
-	_reconstructionWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _inputWidth, _inputHeight, reconstructionNumWeights);
-	_reconstructionWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _inputWidth, _inputHeight, reconstructionNumWeights);
-
 	_reconstruction = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _inputWidth, _inputHeight);
-
-	cl::Kernel reconstructionInit = cl::Kernel(program.getProgram(), "reconstructionInit");
-
-	Uint2 seed2;
-	seed2._x = uniformDist(generator);
-	seed2._y = uniformDist(generator);
-
-	reconstructionInit.setArg(0, _reconstructionWeights);
-	reconstructionInit.setArg(1, reconstructionNumWeights);
-	reconstructionInit.setArg(2, seed2);
-	reconstructionInit.setArg(3, minInitWeight);
-	reconstructionInit.setArg(4, maxInitWeight);
-
-	cs.getQueue().enqueueNDRangeKernel(reconstructionInit, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
-
-	{
-		cl::size_t<3> origin;
-		cl::size_t<3> region;
-
-		origin[0] = 0;
-		origin[1] = 0;
-		origin[2] = 0;
-
-		region[0] = _inputWidth;
-		region[1] = _inputHeight;
-		region[2] = reconstructionNumWeights;
-
-		cs.getQueue().enqueueCopyImage(_reconstructionWeights, _reconstructionWeightsPrev, origin, origin, region);
-	}
 
 	_layerColumnActivateKernel = cl::Kernel(program.getProgram(), "layerColumnActivate");
 	_layerColumnInhibitKernel = cl::Kernel(program.getProgram(), "layerColumnInhibit");
@@ -178,7 +142,6 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	_layerNodeWeightUpdateLastKernel = cl::Kernel(program.getProgram(), "layerNodeWeightUpdateLast");
 
 	_reconstructInputKernel = cl::Kernel(program.getProgram(), "reconstructInput");
-	_learnReconstructionKernel = cl::Kernel(program.getProgram(), "learnReconstruction");
 }
 
 void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, cl::Kernel &initPartThreeKernel, int inputWidth, int inputHeight, int inputCellsPerColumn, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator) {
@@ -436,7 +399,6 @@ void HTMRL::stepBegin() {
 	}
 
 	std::swap(_outputWeights, _outputWeightsPrev);
-	std::swap(_reconstructionWeights, _reconstructionWeightsPrev);
 }
 
 void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator) {
@@ -1139,9 +1101,9 @@ void HTMRL::dutyCycleLayerUpdate(sys::ComputeSystem &cs, Layer &layer, const Lay
 	layerSize._x = layerDesc._width;
 	layerSize._y = layerDesc._height;
 
-	Int2 layerInhibitionRadius;
-	layerInhibitionRadius._x = layerDesc._inhibitionRadius;
-	layerInhibitionRadius._y = layerDesc._inhibitionRadius;
+	Int2 layerDutyCycleRadius;
+	layerDutyCycleRadius._x = layerDesc._dutyCycleRadius;
+	layerDutyCycleRadius._y = layerDesc._dutyCycleRadius;
 
 	// Duty cycles
 	_layerColumnDutyCycleUpdateKernel.setArg(0, layer._columnActivations);
@@ -1149,7 +1111,7 @@ void HTMRL::dutyCycleLayerUpdate(sys::ComputeSystem &cs, Layer &layer, const Lay
 	_layerColumnDutyCycleUpdateKernel.setArg(2, layer._columnDutyCyclesPrev);
 	_layerColumnDutyCycleUpdateKernel.setArg(3, layer._columnDutyCycles);
 	_layerColumnDutyCycleUpdateKernel.setArg(4, layerSize);
-	_layerColumnDutyCycleUpdateKernel.setArg(5, layerInhibitionRadius);
+	_layerColumnDutyCycleUpdateKernel.setArg(5, layerDutyCycleRadius);
 	_layerColumnDutyCycleUpdateKernel.setArg(6, activationDutyCycleDecay);
 	_layerColumnDutyCycleUpdateKernel.setArg(7, stateDutyCycleDecay);
 
@@ -1569,29 +1531,42 @@ void HTMRL::getReconstruction(std::vector<float> &prediction, sys::ComputeSystem
 	layerSize._x = _layerDescs.front()._width;
 	layerSize._y = _layerDescs.front()._height;
 
+	Int2 inputSizeMinusOne;
+	inputSizeMinusOne._x = _inputWidth - 1;
+	inputSizeMinusOne._y = _inputHeight - 1;
+
 	Float2 inputSizeMinusOneInv;
 	inputSizeMinusOneInv._x = 1.0f / (_inputWidth - 1);
 	inputSizeMinusOneInv._y = 1.0f / (_inputHeight - 1);
 
 	Int2 reconstructionReceptiveFieldRadii;
-	reconstructionReceptiveFieldRadii._x = _reconstructionReceptiveRadius;
-	reconstructionReceptiveFieldRadii._y = _reconstructionReceptiveRadius;
+	reconstructionReceptiveFieldRadii._x = std::ceil(static_cast<float>(_layerDescs.front()._width) / _inputWidth * _layerDescs.front()._receptiveFieldRadius);
+	reconstructionReceptiveFieldRadii._y = std::ceil(static_cast<float>(_layerDescs.front()._height) / _inputHeight * _layerDescs.front()._receptiveFieldRadius);
 
-	Int2 layerSizeMinusOne;
-	layerSizeMinusOne._x = _layerDescs.front()._width - 1;
-	layerSizeMinusOne._y = _layerDescs.front()._height - 1;
+	Int2 sdrReceptiveFieldRadii;
+	sdrReceptiveFieldRadii._x = _layerDescs.front()._receptiveFieldRadius;
+	sdrReceptiveFieldRadii._y = _layerDescs.front()._receptiveFieldRadius;
 
-	_reconstructInputKernel.setArg(0, _reconstructionWeightsPrev);
+	Int2 sdrSizeMinusOne;
+	sdrSizeMinusOne._x = _layerDescs.front()._width - 1;
+	sdrSizeMinusOne._y = _layerDescs.front()._height - 1;
+
+	Float2 sdrSizeMinusOneInv;
+	sdrSizeMinusOneInv._x = 1.0f / (_layerDescs.front()._width - 1);
+	sdrSizeMinusOneInv._y = 1.0f / (_layerDescs.front()._height - 1);
+
+	_reconstructInputKernel.setArg(0, _layers.front()._columnWeightsPrev);
 	_reconstructInputKernel.setArg(1, _layers.front()._columnStates);
 	_reconstructInputKernel.setArg(2, _reconstruction);
 	_reconstructInputKernel.setArg(3, reconstructionReceptiveFieldRadii);
-	_reconstructInputKernel.setArg(4, inputSizeMinusOneInv);
-	_reconstructInputKernel.setArg(5, layerSize);
-	_reconstructInputKernel.setArg(6, layerSizeMinusOne);
+	_reconstructInputKernel.setArg(4, sdrReceptiveFieldRadii);
+	_reconstructInputKernel.setArg(5, inputSizeMinusOne);
+	_reconstructInputKernel.setArg(6, inputSizeMinusOneInv);
+	_reconstructInputKernel.setArg(7, layerSize);
+	_reconstructInputKernel.setArg(8, sdrSizeMinusOne);
+	_reconstructInputKernel.setArg(9, sdrSizeMinusOneInv);
 
 	cs.getQueue().enqueueNDRangeKernel(_reconstructInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
-
-	cs.getQueue().flush();
 
 	if (prediction.size() != _input.size())
 		prediction.resize(_input.size());
@@ -1625,29 +1600,42 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 	layerSize._x = _layerDescs.front()._width;
 	layerSize._y = _layerDescs.front()._height;
 
+	Int2 inputSizeMinusOne;
+	inputSizeMinusOne._x = _inputWidth - 1;
+	inputSizeMinusOne._y = _inputHeight - 1;
+
 	Float2 inputSizeMinusOneInv;
 	inputSizeMinusOneInv._x = 1.0f / (_inputWidth - 1);
 	inputSizeMinusOneInv._y = 1.0f / (_inputHeight - 1);
 
 	Int2 reconstructionReceptiveFieldRadii;
-	reconstructionReceptiveFieldRadii._x = _reconstructionReceptiveRadius;
-	reconstructionReceptiveFieldRadii._y = _reconstructionReceptiveRadius;
+	reconstructionReceptiveFieldRadii._x = std::ceil(static_cast<float>(_layerDescs.front()._width) / _inputWidth * _layerDescs.front()._receptiveFieldRadius);
+	reconstructionReceptiveFieldRadii._y = std::ceil(static_cast<float>(_layerDescs.front()._height) / _inputHeight * _layerDescs.front()._receptiveFieldRadius);
 
-	Int2 layerSizeMinusOne;
-	layerSizeMinusOne._x = _layerDescs.front()._width - 1;
-	layerSizeMinusOne._y = _layerDescs.front()._height - 1;
+	Int2 sdrReceptiveFieldRadii;
+	sdrReceptiveFieldRadii._x = _layerDescs.front()._receptiveFieldRadius;
+	sdrReceptiveFieldRadii._y = _layerDescs.front()._receptiveFieldRadius;
 
-	_reconstructInputKernel.setArg(0, _reconstructionWeightsPrev);
+	Int2 sdrSizeMinusOne;
+	sdrSizeMinusOne._x = _layerDescs.front()._width - 1;
+	sdrSizeMinusOne._y = _layerDescs.front()._height - 1;
+
+	Float2 sdrSizeMinusOneInv;
+	sdrSizeMinusOneInv._x = 1.0f / (_layerDescs.front()._width - 1);
+	sdrSizeMinusOneInv._y = 1.0f / (_layerDescs.front()._height - 1);
+
+	_reconstructInputKernel.setArg(0, _layers.front()._columnWeightsPrev);
 	_reconstructInputKernel.setArg(1, _layers.front()._columnPredictions);
 	_reconstructInputKernel.setArg(2, _reconstruction);
 	_reconstructInputKernel.setArg(3, reconstructionReceptiveFieldRadii);
-	_reconstructInputKernel.setArg(4, inputSizeMinusOneInv);
-	_reconstructInputKernel.setArg(5, layerSize);
-	_reconstructInputKernel.setArg(6, layerSizeMinusOne);
+	_reconstructInputKernel.setArg(4, sdrReceptiveFieldRadii);
+	_reconstructInputKernel.setArg(5, inputSizeMinusOne);
+	_reconstructInputKernel.setArg(6, inputSizeMinusOneInv);
+	_reconstructInputKernel.setArg(7, layerSize);
+	_reconstructInputKernel.setArg(8, sdrSizeMinusOne);
+	_reconstructInputKernel.setArg(9, sdrSizeMinusOneInv);
 
 	cs.getQueue().enqueueNDRangeKernel(_reconstructInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
-
-	cs.getQueue().flush();
 
 	if (prediction.size() != _input.size())
 		prediction.resize(_input.size());
@@ -1681,29 +1669,42 @@ void HTMRL::getReconstructedPrevPrediction(std::vector<float> &prediction, sys::
 	layerSize._x = _layerDescs.front()._width;
 	layerSize._y = _layerDescs.front()._height;
 
+	Int2 inputSizeMinusOne;
+	inputSizeMinusOne._x = _inputWidth - 1;
+	inputSizeMinusOne._y = _inputHeight - 1;
+
 	Float2 inputSizeMinusOneInv;
 	inputSizeMinusOneInv._x = 1.0f / (_inputWidth - 1);
 	inputSizeMinusOneInv._y = 1.0f / (_inputHeight - 1);
 
 	Int2 reconstructionReceptiveFieldRadii;
-	reconstructionReceptiveFieldRadii._x = _reconstructionReceptiveRadius;
-	reconstructionReceptiveFieldRadii._y = _reconstructionReceptiveRadius;
+	reconstructionReceptiveFieldRadii._x = std::ceil(static_cast<float>(_layerDescs.front()._width) / _inputWidth * _layerDescs.front()._receptiveFieldRadius);
+	reconstructionReceptiveFieldRadii._y = std::ceil(static_cast<float>(_layerDescs.front()._height) / _inputHeight * _layerDescs.front()._receptiveFieldRadius);
 
-	Int2 layerSizeMinusOne;
-	layerSizeMinusOne._x = _layerDescs.front()._width - 1;
-	layerSizeMinusOne._y = _layerDescs.front()._height - 1;
+	Int2 sdrReceptiveFieldRadii;
+	sdrReceptiveFieldRadii._x = _layerDescs.front()._receptiveFieldRadius;
+	sdrReceptiveFieldRadii._y = _layerDescs.front()._receptiveFieldRadius;
 
-	_reconstructInputKernel.setArg(0, _reconstructionWeightsPrev);
+	Int2 sdrSizeMinusOne;
+	sdrSizeMinusOne._x = _layerDescs.front()._width - 1;
+	sdrSizeMinusOne._y = _layerDescs.front()._height - 1;
+
+	Float2 sdrSizeMinusOneInv;
+	sdrSizeMinusOneInv._x = 1.0f / (_layerDescs.front()._width - 1);
+	sdrSizeMinusOneInv._y = 1.0f / (_layerDescs.front()._height - 1);
+
+	_reconstructInputKernel.setArg(0, _layers.front()._columnWeightsPrev);
 	_reconstructInputKernel.setArg(1, _layers.front()._columnPredictionsPrev);
 	_reconstructInputKernel.setArg(2, _reconstruction);
 	_reconstructInputKernel.setArg(3, reconstructionReceptiveFieldRadii);
-	_reconstructInputKernel.setArg(4, inputSizeMinusOneInv);
-	_reconstructInputKernel.setArg(5, layerSize);
-	_reconstructInputKernel.setArg(6, layerSizeMinusOne);
+	_reconstructInputKernel.setArg(4, sdrReceptiveFieldRadii);
+	_reconstructInputKernel.setArg(5, inputSizeMinusOne);
+	_reconstructInputKernel.setArg(6, inputSizeMinusOneInv);
+	_reconstructInputKernel.setArg(7, layerSize);
+	_reconstructInputKernel.setArg(8, sdrSizeMinusOne);
+	_reconstructInputKernel.setArg(9, sdrSizeMinusOneInv);
 
 	cs.getQueue().enqueueNDRangeKernel(_reconstructInputKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
-
-	cs.getQueue().flush();
 
 	if (prediction.size() != _input.size())
 		prediction.resize(_input.size());
@@ -1722,45 +1723,6 @@ void HTMRL::getReconstructedPrevPrediction(std::vector<float> &prediction, sys::
 
 		cs.getQueue().enqueueReadImage(_reconstruction, CL_TRUE, origin, region, 0, 0, &prediction[0]);
 	}
-}
-
-void HTMRL::learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlpha) {
-	struct Int2 {
-		int _x, _y;
-	};
-
-	struct Float2 {
-		float _x, _y;
-	};
-
-	Int2 layerSize;
-	layerSize._x = _layerDescs.front()._width;
-	layerSize._y = _layerDescs.front()._height;
-
-	Float2 inputSizeMinusOneInv;
-	inputSizeMinusOneInv._x = 1.0f / (_inputWidth - 1);
-	inputSizeMinusOneInv._y = 1.0f / (_inputHeight - 1);
-
-	Int2 reconstructionReceptiveFieldRadii;
-	reconstructionReceptiveFieldRadii._x = _reconstructionReceptiveRadius;
-	reconstructionReceptiveFieldRadii._y = _reconstructionReceptiveRadius;
-
-	Int2 layerSizeMinusOne;
-	layerSizeMinusOne._x = _layerDescs.front()._width - 1;
-	layerSizeMinusOne._y = _layerDescs.front()._height - 1;
-
-	_learnReconstructionKernel.setArg(0, _inputImage);
-	_learnReconstructionKernel.setArg(1, _reconstruction);
-	_learnReconstructionKernel.setArg(2, _reconstructionWeightsPrev);
-	_learnReconstructionKernel.setArg(3, _layers.front()._columnStates);
-	_learnReconstructionKernel.setArg(4, _reconstructionWeights);
-	_learnReconstructionKernel.setArg(5, reconstructionReceptiveFieldRadii);
-	_learnReconstructionKernel.setArg(6, inputSizeMinusOneInv);
-	_learnReconstructionKernel.setArg(7, layerSize);
-	_learnReconstructionKernel.setArg(8, layerSizeMinusOne);
-	_learnReconstructionKernel.setArg(9, reconstructionAlpha);
-
-	cs.getQueue().enqueueNDRangeKernel(_learnReconstructionKernel, cl::NullRange, cl::NDRange(_inputWidth, _inputHeight));
 }
 
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float outputBeta, float outputTemperature, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float deriveQMutationStdDev, float deriveMaxQMutationDecay, float deriveMaxQMomentum, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator) {
@@ -1831,18 +1793,10 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 	if (tdError > 0.0f) {
 		activate(learnInputExploratory, cs, false, seed);
 		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);
-
-		std::vector<float> recon;
-		getReconstructedPrevPrediction(recon, cs);
-		learnReconstruction(cs, reconstructionAlpha);
 	}
 	else {
 		activate(learnInputMaxQ, cs, false, seed);
-		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);
-
-		std::vector<float> recon;
-		getReconstruction(recon, cs);
-		learnReconstruction(cs, reconstructionAlpha);		
+		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);	
 	}
 
 	activate(_input, cs, true, seed);
@@ -1850,9 +1804,8 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 
 	_prevValue = getQ(cs);
 
-	//std::vector<float> recon;
-	//getReconstruction(recon, cs);
-	//learnReconstruction(cs, reconstructionAlpha);
+	std::vector<float> recon;
+	getReconstruction(recon, cs);
 
 	std::cout << "Q: " << newQ << " Err: " << tdError << std::endl;
 

@@ -27,6 +27,7 @@ namespace htm {
 			int _nodeFieldRadius;
 			int _lateralConnectionRadius;
 			int _inhibitionRadius;
+			int _dutyCycleRadius; // Should be about 2 * _inhibitionRadius
 
 			int _cellsInColumn;
 
@@ -35,8 +36,8 @@ namespace htm {
 			float _nodeAlpha;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(4), _lateralConnectionRadius(4), _inhibitionRadius(4), _cellsInColumn(4),
-				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.1f)
+				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(4), _lateralConnectionRadius(4), _inhibitionRadius(2), _dutyCycleRadius(4), _cellsInColumn(4),
+				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.01f)
 			{}
 		};
 
@@ -109,7 +110,6 @@ namespace htm {
 
 		// For reconstruction
 		cl::Kernel _reconstructInputKernel;
-		cl::Kernel _learnReconstructionKernel;
 
 		std::vector<float> _input;
 
@@ -134,9 +134,6 @@ namespace htm {
 		cl::Image3D _outputWeights;
 
 		cl::Image2D _partialSums;
-
-		cl::Image3D _reconstructionWeightsPrev;
-		cl::Image3D _reconstructionWeights;
 
 		cl::Image2D _reconstruction;
 
@@ -187,10 +184,9 @@ namespace htm {
 		void getReconstruction(std::vector<float> &reconstruction, sys::ComputeSystem &cs);
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
 		void getReconstructedPrevPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
-		void learnReconstruction(sys::ComputeSystem &cs, float reconstructionAlpha);
 
 	public:
-		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, int reconstructionReceptiveRadius, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
+		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
 	
 		void step(sys::ComputeSystem &cs, float reward, float outputAlpha, float outputBeta, float outputTemperature, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float deriveQMutationStdDev, float deriveMaxQMutationDecay, float deriveMaxQMomentum, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator);
 
