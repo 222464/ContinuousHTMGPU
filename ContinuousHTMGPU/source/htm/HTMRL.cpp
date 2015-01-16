@@ -185,8 +185,8 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 	layer._cellPredictions = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
 	layer._cellPredictionsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
 
-	layer._cellWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height * layerDesc._cellsInColumn, lateralConnectionsSize);
-	layer._cellWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height * layerDesc._cellsInColumn, lateralConnectionsSize);
+	layer._cellWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RGBA, CL_HALF_FLOAT), layerDesc._width, layerDesc._height * layerDesc._cellsInColumn, lateralConnectionsSize);
+	layer._cellWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RGBA, CL_HALF_FLOAT), layerDesc._width, layerDesc._height * layerDesc._cellsInColumn, lateralConnectionsSize);
 
 	layer._columnPredictions = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
 	layer._columnPredictionsPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
@@ -712,7 +712,7 @@ void HTMRL::learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D 
 	cs.getQueue().flush();
 }
 
-void HTMRL::learnLayerTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, std::mt19937 &generator) {
+void HTMRL::learnLayerTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, std::mt19937 &generator) {
 	struct Uint2 {
 		unsigned int _x, _y;
 	};
@@ -768,6 +768,10 @@ void HTMRL::learnLayerTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D
 	nextLayerSizeMinusOne._x = nextLayerWidth - 1;
 	nextLayerSizeMinusOne._y = nextLayerHeight - 1;
 
+	Float2 traceFactors;
+	traceFactors._x = traceFactorA;
+	traceFactors._y = traceFactorB;
+
 	_layerCellWeightUpdateKernel.setArg(0, layer._columnStates);
 	_layerCellWeightUpdateKernel.setArg(1, layer._cellPredictionsPrev);
 	_layerCellWeightUpdateKernel.setArg(2, layer._cellStates);
@@ -786,13 +790,14 @@ void HTMRL::learnLayerTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D
 	_layerCellWeightUpdateKernel.setArg(15, cellConnectionBeta);
 	_layerCellWeightUpdateKernel.setArg(16, cellConnectionTemperature);
 	_layerCellWeightUpdateKernel.setArg(17, cellWeightEligibilityDecay);
+	_layerCellWeightUpdateKernel.setArg(18, traceFactors);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerCellWeightUpdateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
 	cs.getQueue().flush();
 }
 
-void HTMRL::learnLayerTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, std::mt19937 &generator) {
+void HTMRL::learnLayerTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, std::mt19937 &generator) {
 	struct Uint2 {
 		unsigned int _x, _y;
 	};
@@ -843,6 +848,10 @@ void HTMRL::learnLayerTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Ima
 	lateralConnectionRadii._x = layerDesc._lateralConnectionRadius;
 	lateralConnectionRadii._y = layerDesc._lateralConnectionRadius;
 
+	Float2 traceFactors;
+	traceFactors._x = traceFactorA;
+	traceFactors._y = traceFactorB;
+
 	// Lateral weight update
 	_layerCellWeightUpdateLastKernel.setArg(0, layer._columnStates);
 	_layerCellWeightUpdateLastKernel.setArg(1, layer._cellPredictionsPrev);
@@ -858,13 +867,14 @@ void HTMRL::learnLayerTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Ima
 	_layerCellWeightUpdateLastKernel.setArg(11, cellConnectionBeta);
 	_layerCellWeightUpdateLastKernel.setArg(12, cellConnectionTemperature);
 	_layerCellWeightUpdateLastKernel.setArg(13, cellWeightEligibilityDecay);
+	_layerCellWeightUpdateLastKernel.setArg(14, traceFactors);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerCellWeightUpdateLastKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
 	cs.getQueue().flush();
 }
 
-void HTMRL::learnLayerSpatialTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, std::mt19937 &generator) {
+void HTMRL::learnLayerSpatialTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, std::mt19937 &generator) {
 	struct Uint2 {
 		unsigned int _x, _y;
 	};
@@ -937,6 +947,10 @@ void HTMRL::learnLayerSpatialTemporal(sys::ComputeSystem &cs, Layer &layer, cl::
 	nextLayerSizeMinusOne._x = nextLayerWidth - 1;
 	nextLayerSizeMinusOne._y = nextLayerHeight - 1;
 
+	Float2 traceFactors;
+	traceFactors._x = traceFactorA;
+	traceFactors._y = traceFactorB;
+
 	_layerCellWeightUpdateKernel.setArg(0, layer._columnStates);
 	_layerCellWeightUpdateKernel.setArg(1, layer._cellPredictionsPrev);
 	_layerCellWeightUpdateKernel.setArg(2, layer._cellStates);
@@ -955,13 +969,14 @@ void HTMRL::learnLayerSpatialTemporal(sys::ComputeSystem &cs, Layer &layer, cl::
 	_layerCellWeightUpdateKernel.setArg(15, cellConnectionBeta);
 	_layerCellWeightUpdateKernel.setArg(16, cellConnectionTemperature);
 	_layerCellWeightUpdateKernel.setArg(17, cellWeightEligibilityDecay);
+	_layerCellWeightUpdateKernel.setArg(18, traceFactors);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerCellWeightUpdateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
 	cs.getQueue().flush();
 }
 
-void HTMRL::learnLayerSpatialTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, std::mt19937 &generator) {
+void HTMRL::learnLayerSpatialTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, std::mt19937 &generator) {
 	struct Uint2 {
 		unsigned int _x, _y;
 	};
@@ -1029,6 +1044,10 @@ void HTMRL::learnLayerSpatialTemporalLast(sys::ComputeSystem &cs, Layer &layer, 
 	lateralConnectionRadii._x = layerDesc._lateralConnectionRadius;
 	lateralConnectionRadii._y = layerDesc._lateralConnectionRadius;
 
+	Float2 traceFactors;
+	traceFactors._x = traceFactorA;
+	traceFactors._y = traceFactorB;
+
 	// Lateral weight update
 	_layerCellWeightUpdateLastKernel.setArg(0, layer._columnStates);
 	_layerCellWeightUpdateLastKernel.setArg(1, layer._cellPredictionsPrev);
@@ -1044,6 +1063,7 @@ void HTMRL::learnLayerSpatialTemporalLast(sys::ComputeSystem &cs, Layer &layer, 
 	_layerCellWeightUpdateLastKernel.setArg(11, cellConnectionBeta);
 	_layerCellWeightUpdateLastKernel.setArg(12, cellConnectionTemperature);
 	_layerCellWeightUpdateLastKernel.setArg(13, cellWeightEligibilityDecay);
+	_layerCellWeightUpdateLastKernel.setArg(14, traceFactors);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerCellWeightUpdateLastKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
@@ -1066,7 +1086,7 @@ void HTMRL::learnSpatial(sys::ComputeSystem &cs, float columnConnectionAlpha, fl
 	}
 }
 
-void HTMRL::learnTemporal(sys::ComputeSystem &cs, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, unsigned long seed) {
+void HTMRL::learnTemporal(sys::ComputeSystem &cs, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, unsigned long seed) {
 	std::mt19937 generator(seed);
 
 	cl::Image2D* pPrevLayerOutput = &_inputImage;
@@ -1075,9 +1095,9 @@ void HTMRL::learnTemporal(sys::ComputeSystem &cs, float cellConnectionAlpha, flo
 
 	for (int l = 0; l < _layers.size(); l++) {
 		if (l == _layers.size() - 1)
-			learnLayerTemporalLast(cs, _layers[l], *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layerDescs[l], cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, generator);
+			learnLayerTemporalLast(cs, _layers[l], *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layerDescs[l], cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, traceFactorA, traceFactorB, generator);
 		else
-			learnLayerTemporal(cs, _layers[l], *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layers[l + 1]._columnPredictionsPrev, _layerDescs[l + 1]._width, _layerDescs[l + 1]._width, _layerDescs[l], cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, generator);
+			learnLayerTemporal(cs, _layers[l], *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layers[l + 1]._columnPredictionsPrev, _layerDescs[l + 1]._width, _layerDescs[l + 1]._width, _layerDescs[l], cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, traceFactorA, traceFactorB, generator);
 
 		pPrevLayerOutput = &_layers[l]._columnStates;
 		prevLayerWidth = _layerDescs[l]._width;
@@ -1085,7 +1105,7 @@ void HTMRL::learnTemporal(sys::ComputeSystem &cs, float cellConnectionAlpha, flo
 	}
 }
 
-void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, unsigned long seed) {
+void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, unsigned long seed) {
 	std::mt19937 generator(seed);
 
 	cl::Image2D* pPrevLayerOutput = &_inputImage;
@@ -1094,9 +1114,9 @@ void HTMRL::learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionA
 	
 	for (int l = 0; l < _layers.size(); l++) {
 		if (l == _layers.size() - 1)
-			learnLayerSpatialTemporalLast(cs, _layers[l], *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layerDescs[l], columnConnectionAlpha, widthAlpha, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, generator);
+			learnLayerSpatialTemporalLast(cs, _layers[l], *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layerDescs[l], columnConnectionAlpha, widthAlpha, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, traceFactorA, traceFactorB, generator);
 		else
-			learnLayerSpatialTemporal(cs, _layers[l], *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layers[l + 1]._columnPredictionsPrev, _layerDescs[l + 1]._width, _layerDescs[l + 1]._width, _layerDescs[l], columnConnectionAlpha, widthAlpha, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, generator);
+			learnLayerSpatialTemporal(cs, _layers[l], *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layers[l + 1]._columnPredictionsPrev, _layerDescs[l + 1]._width, _layerDescs[l + 1]._width, _layerDescs[l], columnConnectionAlpha, widthAlpha, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, traceFactorA, traceFactorB, generator);
 	
 		pPrevLayerOutput = &_layers[l]._columnStates;
 		prevLayerWidth = _layerDescs[l]._width;
@@ -1844,24 +1864,19 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 
 	float tdError = alpha * (newQ - _prevValue);
 
-	if (tdError > maxTdError)
-		tdError = maxTdError;
-	else if (tdError < -maxTdError)
-		tdError = -maxTdError;
-
 	learnSpatial(cs, columnConnectionAlpha, widthAlpha, seed + 1);
 
 	if (tdError > 0.0f) {
 		activate(learnInputExploratory, cs, false, seed);
-		
-		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);
+	
+		learnTemporal(cs, cellConnectionAlpha * tdError, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, 1.0f, 0.0f, seed + 2);
 
 		std::cout << "Exp" << std::endl;
 	}
 	else {
 		activate(learnInputMaxQ, cs, false, seed);
-
-		learnTemporal(cs, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, 1.0f, seed + 2);	
+		
+		learnTemporal(cs, cellConnectionAlpha * -tdError, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, 0.0f, 1.0f, seed + 2);
 
 		std::cout << "Max" << std::endl;
 	}

@@ -387,7 +387,7 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 }
 
 void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellStates, read_only image3d_t cellStatesPrev, read_only image2d_t nextLayerContextPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
-	write_only image3d_t cellWeights, int cellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float2 layerSizeMinusOneInv, int2 nextLayerSize, int2 nextLayerSizeMinusOne, float alpha, float beta, float temperature, float eligibilityDecay)
+	write_only image3d_t cellWeights, int cellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float2 layerSizeMinusOneInv, int2 nextLayerSize, int2 nextLayerSizeMinusOne, float alpha, float beta, float temperature, float eligibilityDecay, float2 traceFactors)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
@@ -421,19 +421,22 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 				for (int cio = 0; cio < cellsInColumn; cio++) {
 					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
 				
-					float2 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xy;
+					float3 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xyz;
 			
 					float connectionState = read_imagef(cellStatesPrev, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
 					
-					float eligibility = cellError * connectionState;
+					float eligibilityA = cellError * connectionState * traceFactors.x;
+					float eligibilityB = cellError * connectionState * traceFactors.y;
 					
-					float decayedTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y;
+					float decayedTraceA = (1.0f - eligibilityDecay) * cellWeightPrev.y;
+					float decayedTraceB = (1.0f - eligibilityDecay) * cellWeightPrev.z;
 					
-					float newTrace = decayedTrace + beta * (sign(decayedTrace) == sign(eligibility) ? exp(-temperature * fabs(decayedTrace)) : 1.0f) * eligibility;
+					float newTraceA = decayedTraceA + beta * (sign(decayedTraceA) == sign(eligibilityA) ? exp(-temperature * fabs(decayedTraceA)) : 1.0f) * eligibilityA;
+					float newTraceB = decayedTraceB + beta * (sign(decayedTraceB) == sign(eligibilityB) ? exp(-temperature * fabs(decayedTraceB)) : 1.0f) * eligibilityB;
 					
-					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * newTrace, newTrace);
+					float3 newCellWeight = (float3)(cellWeightPrev.x + alpha * (newTraceA * traceFactors.x + newTraceB * traceFactors.y), newTraceA, newTraceB);
 					
-					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, 0.0f, 0.0f));
+					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, newCellWeight.z, 0.0f));
 					
 					wi++;
 				}
@@ -446,17 +449,20 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 				if (connectionCoordsNext.x >= 0 && connectionCoordsNext.x < nextLayerSize.x && connectionCoordsNext.y >= 0 && connectionCoordsNext.y < nextLayerSize.y) {
 					float nextContextPrev = read_imagef(nextLayerContextPrev, connectionCoordsNext).x;
 					
-					float2 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xy;
+					float3 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xyz;
 
-					float eligibility = cellError * nextContextPrev;
+					float eligibilityA = cellError * nextContextPrev * traceFactors.x;
+					float eligibilityB = cellError * nextContextPrev * traceFactors.y;
 					
-					float decayedTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y;
+					float decayedTraceA = (1.0f - eligibilityDecay) * cellWeightPrev.y;
+					float decayedTraceB = (1.0f - eligibilityDecay) * cellWeightPrev.z;
 					
-					float newTrace = decayedTrace + beta * (sign(decayedTrace) == sign(eligibility) ? exp(-temperature * fabs(decayedTrace)) : 1.0f) * eligibility;
+					float newTraceA = decayedTraceA + beta * (sign(decayedTraceA) == sign(eligibilityA) ? exp(-temperature * fabs(decayedTraceA)) : 1.0f) * eligibilityA;
+					float newTraceB = decayedTraceB + beta * (sign(decayedTraceB) == sign(eligibilityB) ? exp(-temperature * fabs(decayedTraceB)) : 1.0f) * eligibilityB;
 					
-					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * newTrace, newTrace);
+					float3 newCellWeight = (float3)(cellWeightPrev.x + alpha * (newTraceA * traceFactors.x + newTraceB * traceFactors.y), newTraceA, newTraceB);
 					
-					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, 0.0f, 0.0f));
+					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, newCellWeight.z, 0.0f));
 				}
 				
 				wi++;
@@ -482,7 +488,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 }
 
 void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
-	write_only image3d_t cellWeights, int cellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float alpha, float beta, float temperature, float eligibilityDecay)
+	write_only image3d_t cellWeights, int cellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float alpha, float beta, float temperature, float eligibilityDecay, float2 traceFactors)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
@@ -513,19 +519,22 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 				for (int cio = 0; cio < cellsInColumn; cio++) {
 					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
 				
-					float2 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xy;
+					float3 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xyz;
 			
 					float connectionState = read_imagef(cellStatesPrev, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
 						
-					float eligibility = cellError * connectionState;
+					float eligibilityA = cellError * connectionState * traceFactors.x;
+					float eligibilityB = cellError * connectionState * traceFactors.y;
 					
-					float decayedTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y;
+					float decayedTraceA = (1.0f - eligibilityDecay) * cellWeightPrev.y;
+					float decayedTraceB = (1.0f - eligibilityDecay) * cellWeightPrev.z;
 					
-					float newTrace = decayedTrace + beta * (sign(decayedTrace) == sign(eligibility) ? exp(-temperature * fabs(decayedTrace)) : 1.0f) * eligibility;
+					float newTraceA = decayedTraceA + beta * (sign(decayedTraceA) == sign(eligibilityA) ? exp(-temperature * fabs(decayedTraceA)) : 1.0f) * eligibilityA;
+					float newTraceB = decayedTraceB + beta * (sign(decayedTraceB) == sign(eligibilityB) ? exp(-temperature * fabs(decayedTraceB)) : 1.0f) * eligibilityB;
 					
-					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * newTrace, newTrace);
+					float3 newCellWeight = (float3)(cellWeightPrev.x + alpha * (newTraceA * traceFactors.x + newTraceB * traceFactors.y), newTraceA, newTraceB);
 					
-					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, 0.0f, 0.0f));
+					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, newCellWeight.z, 0.0f));
 					
 					wi++;
 				}
@@ -1059,7 +1068,7 @@ void kernel reconstructInput(read_only image3d_t sdrCenters, read_only image2d_t
 	float recon;
 	
 	if (divisor == 0.0f)
-		recon = 0.0f;
+		recon = 0.5f;
 	else
 		recon = sum / divisor;
 	
