@@ -41,7 +41,7 @@ namespace htm {
 			float _blurKernelWidthMuliplier;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(4), _lateralConnectionRadius(5), _inhibitionRadius(3), _dutyCycleRadius(4), _cellsInColumn(4),
+				: _width(16), _height(16), _receptiveFieldRadius(3), _nodeFieldRadius(3), _lateralConnectionRadius(5), _inhibitionRadius(3), _dutyCycleRadius(4), _cellsInColumn(3),
 				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.1f), _noMatchIntensity(8.0f), _numBlurPasses(1), _blurKernelWidthMuliplier(0.25f)
 			{}
 		};

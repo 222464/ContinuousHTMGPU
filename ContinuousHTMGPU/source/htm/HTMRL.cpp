@@ -486,8 +486,6 @@ void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, 
 
 	cs.getQueue().enqueueNDRangeKernel(_layerColumnInhibitKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
-	int layerWidth = layerDesc._width;
-
 	Int2 lateralConnectionRadii;
 	lateralConnectionRadii._x = layerDesc._lateralConnectionRadius;
 	lateralConnectionRadii._y = layerDesc._lateralConnectionRadius;
