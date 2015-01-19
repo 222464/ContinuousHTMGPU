@@ -326,28 +326,14 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 	
 	float allPossibilitiesIncrease = 1.0f - highestPrediction;
 	
-	float highestNoisyPrediction = 0.0f;
-	
-	int highestNoisyPredictionCell = 0;
-	
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float prediction = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		float noisyPrediction = prediction + randFloat(&seed) * allPossibilitiesIncrease;
-		
-		if (noisyPrediction > highestNoisyPrediction) {
-			highestNoisyPrediction = noisyPrediction;
-			
-			highestNoisyPredictionCell = ci;
-		}
-	}
-	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float newCellState = (highestPrediction * (ci == highestPredictionCell ? 1.0f : 0.0f) + allPossibilitiesIncrease) * columnState;
 	
-		float learnState = (ci == highestNoisyPredictionCell ? 1.0f : 0.0f) * columnState;
+		float prevTrace = read_imagef(cellStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
 	
-		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellState, learnState, 0.0f, 0.0f));
+		float newTrace = fmax((1.0f - cellTraceDecay) * prevTrace, newCellState);
+	
+		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellState, newTrace, 0.0f, 0.0f));
 	}*/
 	
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
@@ -398,7 +384,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 		int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
 		
 		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y)
-			tdError += read_imagef(columnTdErrors, columnPosition).x;
+			tdError += read_imagef(columnTdErrors, connectionCoords).x;
 	}
 	
 	float learn = tdError > 0.0f ? 1.0f : 0.0f;
@@ -453,7 +439,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 					
 					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + beta * (sign(cellWeightPrev.y) == sign(eligibility) ? exp(-temperature * fabs(cellWeightPrev.y)) : 1.0f) * eligibility;
 					
-					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * newTrace, newTrace);
+					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * learn * newTrace, newTrace);
 					
 					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, 0.0f, 0.0f));
 				}
@@ -496,7 +482,7 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 		int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
 		
 		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y)
-			tdError += read_imagef(columnTdErrors, columnPosition).x;
+			tdError += read_imagef(columnTdErrors, connectionCoords).x;
 	}
 	
 	float learn = tdError > 0.0f ? 1.0f : 0.0f;

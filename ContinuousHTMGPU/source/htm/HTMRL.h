@@ -85,8 +85,8 @@ namespace htm {
 			cl::Image3D _cellPredictionsPrev;
 			cl::Image3D _cellPredictions;
 
-			cl::Image2D _blurredLayerOutputsPing;
-			cl::Image2D _blurredLayerOutputsPong;
+			cl::Image2D _blurPing;
+			cl::Image2D _blurPong;
 
 			float _tdError;
 

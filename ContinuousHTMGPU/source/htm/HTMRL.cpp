@@ -158,8 +158,8 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 	layer._columnPredictions = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
 	layer._columnPredictionsPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
 
-	layer._blurredLayerOutputsPing = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
-	layer._blurredLayerOutputsPong = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
+	layer._blurPing = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
+	layer._blurPong = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
 
 	Uint2 seed1;
 	seed1._x = uniformDist(generator);
@@ -480,8 +480,6 @@ void HTMRL::predictLayer(sys::ComputeSystem &cs, cl::Image2D &nextLayerPredictio
 	_layerColumnPredictionKernel.setArg(3, layerDesc._cellsInColumn);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerColumnPredictionKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
-
-	cs.getQueue().flush();
 }
 
 void HTMRL::predictLayerLast(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator) {
@@ -553,9 +551,9 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 		activateLayer(cs, *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layers[l], _layerDescs[l], cellStateDecay, generator);
 		
 		// Blur output
-		gaussianBlur(cs, _layers[l]._columnStates, _layers[l]._blurredLayerOutputsPing, _layers[l]._blurredLayerOutputsPong, _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._numBlurPasses, _layerDescs[l]._blurKernelWidthMuliplier);
+		gaussianBlur(cs, _layers[l]._columnStates, _layers[l]._blurPing, _layers[l]._blurPong, _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._numBlurPasses, _layerDescs[l]._blurKernelWidthMuliplier);
 
-		pPrevLayerOutput = &_layers[l]._blurredLayerOutputsPong;
+		pPrevLayerOutput = &_layers[l]._blurPong;
 		prevLayerWidth = _layerDescs[l]._width;
 		prevLayerHeight = _layerDescs[l]._height;
 	}
@@ -879,18 +877,6 @@ void HTMRL::learnLayerTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Ima
 	Float2 layerSizeInv;
 	layerSizeInv._x = 1.0f / layerDesc._width;
 	layerSizeInv._y = 1.0f / layerDesc._height;
-
-	Int2 inputReceptiveFieldRadius;
-	inputReceptiveFieldRadius._x = layerDesc._receptiveFieldRadius;
-	inputReceptiveFieldRadius._y = layerDesc._receptiveFieldRadius;
-
-	Int2 layerReceptiveFieldRadius;
-	layerReceptiveFieldRadius._x = layerDesc._receptiveFieldRadius;
-	layerReceptiveFieldRadius._y = layerDesc._receptiveFieldRadius;
-
-	Float2 layerReceptiveFieldStep;
-	layerReceptiveFieldStep._x = layerSizeInv._x;
-	layerReceptiveFieldStep._y = layerSizeInv._y;
 
 	Int2 lateralConnectionRadii;
 	lateralConnectionRadii._x = layerDesc._lateralConnectionRadius;
