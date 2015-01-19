@@ -2,37 +2,27 @@
 
 using namespace htm;
 
-void AnythingEncoder::create(int sdrSize, int inputSize, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, float minInitWeight, float maxInitWeight, std::mt19937 &generator) {
+void AnythingEncoder::create(int sdrSize, int inputSize, float minInitCenter, float maxInitCenter, std::mt19937 &generator) {
 	_sdrSize = sdrSize;
 	_inputSize = inputSize;
 
 	_nodes.resize(sdrSize);
-	_recons.resize(inputSize);
-
+	
 	std::uniform_real_distribution<float> centerDist(minInitCenter, maxInitCenter);
-	std::uniform_real_distribution<float> widthDist(minInitWidth, maxInitWidth);
-	std::uniform_real_distribution<float> weightDist(minInitWeight, maxInitWeight);
 
 	for (int i = 0; i < _sdrSize; i++) {
 		_nodes[i]._center.resize(inputSize);
 
 		for (int j = 0; j < _inputSize; j++)
 			_nodes[i]._center[j] = centerDist(generator);
-		
-		_nodes[i]._width = widthDist(generator);
-	}
-
-	for (int i = 0; i < _inputSize; i++) {
-		_recons[i]._reconWeights.resize(sdrSize);
-
-		for (int j = 0; j < _sdrSize; j++)
-			_recons[i]._reconWeights[j] = weightDist(generator);
 	}
 }
 
 void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float> &sdr, float localActivity, float outputIntensity, float dutyCycleDecay) {
 	if (sdr.size() != _sdrSize)
 		sdr.resize(_sdrSize);
+
+	float maxActivation = -999999.0f;
 
 	for (int i = 0; i < _sdrSize; i++) {
 		float sum = 0.0f;
@@ -43,43 +33,44 @@ void AnythingEncoder::encode(const std::vector<float> &input, std::vector<float>
 			sum += difference * difference;
 		}
 
-		_nodes[i]._sum = sum;
-		_nodes[i]._activation = -_nodes[i]._sum;// * _nodes[i]._width;
+		_nodes[i]._activation = -sum;
+
+		maxActivation = std::max(maxActivation, _nodes[i]._activation);
 	}
+
+	_bestRepresentation = maxActivation;
 
 	// Inhibit
 	for (int i = 0; i < _sdrSize; i++) {
 		float numHigher = 0.0f;
 
 		for (int j = 0; j < _sdrSize; j++) {
-			if (_nodes[j]._activation >= _nodes[i]._activation)
+			if (_nodes[j]._activation > _nodes[i]._activation)
 				numHigher++;
 		}
 
+		_nodes[i]._outputPrev = _nodes[i]._output;
+
 		sdr[i] = _nodes[i]._output = sigmoid((localActivity - numHigher) * outputIntensity);
 
-		_nodes[i]._dutyCycle = (1.0f - dutyCycleDecay) * (1.0f - _nodes[i]._output) * _nodes[i]._dutyCycle + _nodes[i]._output;
+		_nodes[i]._dutyCycle = std::max((1.0f - dutyCycleDecay) * _nodes[i]._dutyCycle, _nodes[i]._output);
+
+		if (_nodes[i]._dutyCycle < _nodes[_boostCandidate]._dutyCycle)
+			_boostCandidate = i;
 	}
 }
 
-void AnythingEncoder::learn(const std::vector<float> &input, const std::vector<float> &recon, float centerAlpha, float widthAlpha, float widthScalar, float minWidth, float reconAlpha, float boostThreshold, float boostIntensity) {
-	for (int i = 0; i < _sdrSize; i++) {
-		float learnScalar = boostFunction(_nodes[i]._dutyCycle, boostThreshold, boostIntensity);
+void AnythingEncoder::learn(const std::vector<float> &input, float centerAlpha, float maxDutyCycleForLearn, float noMatchIntensity) {
+	float noMatch = 1.0f - exp(_bestRepresentation * noMatchIntensity);
 
-		for (int j = 0; j < _inputSize; j++) {
-			float difference = input[j] - _nodes[i]._center[j];
+	float boost = _nodes[_boostCandidate]._dutyCycle < maxDutyCycleForLearn ? noMatch : 0.0f;
 
-			_nodes[i]._center[j] += centerAlpha * learnScalar * difference;
-		}
+	float learnScalar = (1.0f - boost) * std::max(0.0f, _nodes[_boostCandidate]._output - _nodes[_boostCandidate]._outputPrev) + boost;
 
-		_nodes[i]._width = std::max(0.0f, _nodes[i]._width + widthAlpha * learnScalar * (widthScalar / std::max(minWidth, _nodes[i]._sum) - _nodes[i]._width));
-	}
+	for (int j = 0; j < _inputSize; j++) {
+		float difference = input[j] - _nodes[_boostCandidate]._center[j];
 
-	for (int i = 0; i < _inputSize; i++) {
-		float reconError = reconAlpha * (input[i] - recon[i]);
-
-		for (int j = 0; j < _sdrSize; j++)
-			_recons[i]._reconWeights[j] += reconError * _nodes[j]._output;
+		_nodes[_boostCandidate]._center[j] += centerAlpha * learnScalar * difference;
 	}
 }
 
@@ -89,10 +80,17 @@ void AnythingEncoder::decode(const std::vector<float> &sdr, std::vector<float> &
 
 	for (int i = 0; i < _inputSize; i++) {
 		float sum = 0.0f;
+		float divisor = 0.0f;
 
-		for (int j = 0; j < _sdrSize; j++)
-			sum += _recons[i]._reconWeights[j] * _nodes[j]._output;
+		for (int j = 0; j < _sdrSize; j++) {
+			sum += _nodes[j]._center[i] * _nodes[j]._output;
 
-		recon[i] = sum;
+			divisor += _nodes[j]._output;
+		}
+
+		if (divisor == 0.0f)
+			recon[i] = 0.0f;
+		else
+			recon[i] = sum / divisor;
 	}
 }

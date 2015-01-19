@@ -21,14 +21,14 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 constant float columnIntensity = 8.0f;
 constant float valueSensitivityPower = 4.0f;
 constant float learnIntensity = 0.3f;
-constant float modulationPower = 2.0f;
+constant float modulationPower = 1.5f;
 constant float crowdingIntensity = 4.0f;
-constant float cellStateIntensity = 16.0f;
+constant float cellStateIntensity = 64.0f;
 constant float cellPredictionIntensity = 4.0f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
-constant float localActivity = 2.0f;
-constant float crowdingActivity = 3.0f;
+constant float localActivity = 3.0f;
+constant float crowdingActivity = 4.0f;
 constant float uniquenessPower = 4.0f;
 constant float minOverlapForActivation = 0.0f;
 constant float subOverlapIncrement = 0.0005f;
@@ -41,6 +41,7 @@ constant float minWidth = 0.0001f;
 constant float minBoostThreshold = 0.0001f;
 constant float nodeOutputIntensity = 1.0f;
 constant float rectifierLeak = 0.03f;
+constant float cellNoise = 0.01f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -59,6 +60,10 @@ float sigmoid(float x) {
 
 float relu(float x) {
 	return log(1.0f + exp(x));
+}
+
+float rectifier(float x) {
+	return fmax(0.0f, x);
 }
 
 float rectifierDerivative(float x) {
@@ -99,7 +104,7 @@ void kernel initializePartOne(write_only image2d_t columnActivations, write_only
 	write_imagef(columnWeights, widthPosition, (float4)(columnWidth, 0.0f, 0.0f, 0.0f));
 }
 
-void kernel initializePartTwo(write_only image3d_t cellStates, write_only image3d_t cellWeights, write_only image3d_t cellPredictions,
+void kernel initializePartTwo(write_only image3d_t cellStates, write_only image3d_t cellWeights, write_only image3d_t cellPredictions, write_only image3d_t cellQValues,
 	int cellsInColumn, int receptiveFieldSize, int lateralConnectionsSize, uint2 seed, float minWeight, float maxWeight)
 {
 	uint2 seedValue = seed + (uint2)(get_global_id(0) * 32 + 24, get_global_id(1) * 11 - 66) * 23;
@@ -109,6 +114,7 @@ void kernel initializePartTwo(write_only image3d_t cellStates, write_only image3
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 		write_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(0.0f, 0.0f, 0.0f, 0.0f));
+		write_imagef(cellQValues, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(0.0f, 0.0f, 0.0f, 0.0f));
 		
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
 	
@@ -119,47 +125,6 @@ void kernel initializePartTwo(write_only image3d_t cellStates, write_only image3
 	
 			write_imagef(cellWeights, weightPosition, (float4)(cellWeight, 0.0f, 0.0f, 0.0f));
 		}
-	}
-}
-
-void kernel initializePartThree(write_only image3d_t nodeOutputs, write_only image3d_t nodeErrors, write_only image3d_t nodeBiases, write_only image3d_t nodeWeights,
-	int cellsInColumn, int receptiveFieldSize, int lateralConnectionsSize, uint2 seed, float minWeight, float maxWeight)
-{
-	uint2 seedValue = seed + (uint2)(get_global_id(0) * 67 + 12, get_global_id(1) * 9 - 11) * 12;
-
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-		
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(0.0f, 0.0f, 0.0f, 0.0f));
-		write_imagef(nodeErrors, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(0.0f, 0.0f, 0.0f, 0.0f));
-		
-		float biasWeight = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
-
-		write_imagef(nodeBiases, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(biasWeight, 0.0f, 0.0f, 0.0f));
-		
-		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
-	
-		for (int wi = 0; wi < receptiveFieldSize; wi++) {
-			int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
-		
-			float weight = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
-	
-			write_imagef(nodeWeights, weightPosition, (float4)(weight, 0.0f, 0.0f, 0.0f));
-		}
-	}
-}
-
-void kernel initializePartFour(write_only image3d_t outputWeights, 
-	int cellsInColumn, uint2 seed, float minWeight, float maxWeight)
-{
-	uint2 seedValue = seed + (uint2)(get_global_id(0) * 77 - 45, get_global_id(1) * 24 + 66) * 61;
-
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float weight = randFloat(&seedValue) * (maxWeight - minWeight) + minWeight;
-
-		write_imagef(outputWeights, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(weight, 0.0f, 0.0f, 0.0f));
 	}
 }
 
@@ -410,8 +375,8 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 	}
 }
 
-void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellStates, read_only image3d_t cellStatesPrev, read_only image2d_t nextLayerContextPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
-	write_only image3d_t cellWeights, int cellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float2 layerSizeMinusOneInv, int2 nextLayerSize, int2 nextLayerSizeMinusOne, float alpha, float beta, float temperature, float eligibilityDecay, float2 traceFactors)
+void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellStates, read_only image3d_t cellStatesPrev, read_only image2d_t nextLayerContextPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev, read_only image2d_t columnTdErrors,
+	write_only image3d_t cellWeights, int cellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float2 layerSizeMinusOneInv, int2 nextLayerSize, int2 nextLayerSizeMinusOne, float alpha, float beta, float temperature, float eligibilityDecay)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
@@ -421,15 +386,28 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 	float columnState = read_imagef(columnStates, columnPosition).x;
 	float columnPredictionPrev = read_imagef(columnPredictionsPrev, columnPosition).x;
 	
-	float predictionError = columnState - columnPredictionPrev;
+	// Gather tdError
+	float tdError = 0.0f;
+	
+	for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
+	for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
+		int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
+		
+		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y)
+			tdError += read_imagef(columnTdErrors, columnPosition).x;
+	}
+	
+	float learn = tdError > 0.0f ? 1.0f : 0.0f;
+	
+	//float predictionError = columnState - columnPredictionPrev;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
 		
 		float2 cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		float cellPredictionPrev = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		float cellError = predictionError;//cellState.y * columnState - cellPredictionPrev;
+
+		float cellError = cellState.x - cellPredictionPrev;
 		
 		// Go through all connections and update them
 		int wi = 0;
@@ -437,30 +415,22 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 		for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
 		for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
 			int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
-			
-			//if (dx == 0 && dy == 0)
-			//	continue;
 				
 			if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {	
 				for (int cio = 0; cio < cellsInColumn; cio++) {
 					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
 				
-					float3 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xyz;
+					float2 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xy;
 			
 					float connectionState = read_imagef(cellStatesPrev, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
 					
-					float eligibilityA = cellError * connectionState * traceFactors.x;
-					float eligibilityB = cellError * connectionState * traceFactors.y;
+					float eligibility = cellError * connectionState;
 					
-					float decayedTraceA = (1.0f - eligibilityDecay) * cellWeightPrev.y;
-					float decayedTraceB = (1.0f - eligibilityDecay) * cellWeightPrev.z;
+					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + beta * (sign(cellWeightPrev.y) == sign(eligibility) ? exp(-temperature * fabs(cellWeightPrev.y)) : 1.0f) * eligibility;
 					
-					float newTraceA = decayedTraceA + beta * (sign(decayedTraceA) == sign(eligibilityA) ? exp(-temperature * fabs(decayedTraceA)) : 1.0f) * eligibilityA;
-					float newTraceB = decayedTraceB + beta * (sign(decayedTraceB) == sign(eligibilityB) ? exp(-temperature * fabs(decayedTraceB)) : 1.0f) * eligibilityB;
+					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * learn * newTrace, newTrace);
 					
-					float3 newCellWeight = (float3)(cellWeightPrev.x + alpha * (newTraceA * traceFactors.x + newTraceB * traceFactors.y), newTraceA, newTraceB);
-					
-					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, newCellWeight.z, 0.0f));
+					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, 0.0f, 0.0f));
 					
 					wi++;
 				}
@@ -473,20 +443,15 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 				if (connectionCoordsNext.x >= 0 && connectionCoordsNext.x < nextLayerSize.x && connectionCoordsNext.y >= 0 && connectionCoordsNext.y < nextLayerSize.y) {
 					float nextContextPrev = read_imagef(nextLayerContextPrev, connectionCoordsNext).x;
 					
-					float3 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xyz;
+					float2 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xy;
 
-					float eligibilityA = cellError * nextContextPrev * traceFactors.x;
-					float eligibilityB = cellError * nextContextPrev * traceFactors.y;
+					float eligibility = cellError * nextContextPrev;
 					
-					float decayedTraceA = (1.0f - eligibilityDecay) * cellWeightPrev.y;
-					float decayedTraceB = (1.0f - eligibilityDecay) * cellWeightPrev.z;
+					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + beta * (sign(cellWeightPrev.y) == sign(eligibility) ? exp(-temperature * fabs(cellWeightPrev.y)) : 1.0f) * eligibility;
 					
-					float newTraceA = decayedTraceA + beta * (sign(decayedTraceA) == sign(eligibilityA) ? exp(-temperature * fabs(decayedTraceA)) : 1.0f) * eligibilityA;
-					float newTraceB = decayedTraceB + beta * (sign(decayedTraceB) == sign(eligibilityB) ? exp(-temperature * fabs(decayedTraceB)) : 1.0f) * eligibilityB;
+					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * newTrace, newTrace);
 					
-					float3 newCellWeight = (float3)(cellWeightPrev.x + alpha * (newTraceA * traceFactors.x + newTraceB * traceFactors.y), newTraceA, newTraceB);
-					
-					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, newCellWeight.z, 0.0f));
+					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, 0.0f, 0.0f));
 				}
 				
 				wi++;
@@ -511,15 +476,28 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 	}
 }
 
-void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
-	write_only image3d_t cellWeights, int cellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float alpha, float beta, float temperature, float eligibilityDecay, float2 traceFactors)
+void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev, read_only image2d_t columnTdErrors,
+	write_only image3d_t cellWeights, int cellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float alpha, float beta, float temperature, float eligibilityDecay)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
 	float columnState = read_imagef(columnStates, columnPosition).x;
 	float columnPredictionPrev = read_imagef(columnPredictionsPrev, columnPosition).x;
 	
-	float predictionError = columnState - columnPredictionPrev;
+	// Gather tdError
+	float tdError = 0.0f;
+	
+	for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
+	for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
+		int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
+		
+		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y)
+			tdError += read_imagef(columnTdErrors, columnPosition).x;
+	}
+	
+	float learn = tdError > 0.0f ? 1.0f : 0.0f;
+	
+	//float predictionError = columnState - columnPredictionPrev;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
@@ -527,7 +505,7 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 		float2 cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		float cellPredictionPrev = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		float cellError = predictionError;//cellState.y * columnState - cellPredictionPrev;
+		float cellError = cellState.x - cellPredictionPrev;
 		
 		// Go through all connections and update them
 		int wi = 0;
@@ -536,29 +514,21 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 		for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
 			int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
 			
-			if (dx == 0 && dy == 0)
-				continue;
-			
 			if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {	
 				for (int cio = 0; cio < cellsInColumn; cio++) {
 					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
 				
-					float3 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xyz;
+					float2 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xy;
 			
 					float connectionState = read_imagef(cellStatesPrev, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
-						
-					float eligibilityA = cellError * connectionState * traceFactors.x;
-					float eligibilityB = cellError * connectionState * traceFactors.y;
 					
-					float decayedTraceA = (1.0f - eligibilityDecay) * cellWeightPrev.y;
-					float decayedTraceB = (1.0f - eligibilityDecay) * cellWeightPrev.z;
+					float eligibility = cellError * connectionState;
 					
-					float newTraceA = decayedTraceA + beta * (sign(decayedTraceA) == sign(eligibilityA) ? exp(-temperature * fabs(decayedTraceA)) : 1.0f) * eligibilityA;
-					float newTraceB = decayedTraceB + beta * (sign(decayedTraceB) == sign(eligibilityB) ? exp(-temperature * fabs(decayedTraceB)) : 1.0f) * eligibilityB;
+					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + beta * (sign(cellWeightPrev.y) == sign(eligibility) ? exp(-temperature * fabs(cellWeightPrev.y)) : 1.0f) * eligibility;
 					
-					float3 newCellWeight = (float3)(cellWeightPrev.x + alpha * (newTraceA * traceFactors.x + newTraceB * traceFactors.y), newTraceA, newTraceB);
+					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * learn * newTrace, newTrace);
 					
-					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, newCellWeight.z, 0.0f));
+					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, 0.0f, 0.0f));
 					
 					wi++;
 				}
@@ -603,9 +573,6 @@ void kernel layerCellPredict(read_only image2d_t columnStates, read_only image3d
 		for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
 			int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
 			
-			if (dx == 0 && dy == 0)
-				continue;
-				
 			if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {	
 				for (int cio = 0; cio < cellsInColumn; cio++) {
 					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
@@ -665,10 +632,7 @@ void kernel layerCellPredictLast(read_only image2d_t columnStates, read_only ima
 		for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
 		for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
 			int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
-			
-			if (dx == 0 && dy == 0)
-				continue;
-				
+
 			if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {	
 				for (int cio = 0; cio < cellsInColumn; cio++) {
 					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, wi, 0);
@@ -714,339 +678,161 @@ void kernel layerColumnPrediction(read_only image3d_t cellPredictions, read_only
 	write_imagef(columnPredictions, columnPosition, (float4)(output, output, output, output));
 }
 
-void kernel layerNodeActivate(read_only image3d_t nodeStatesInput, read_only image3d_t cellStates, read_only image3d_t nodeBiases, read_only image3d_t nodeWeights, write_only image3d_t nodeOutputs,
-	int cellsInColumn, int inputCellsPerColumn, int2 nodeFieldRadius, float2 layerSizeMinusOneInv, int2 inputSize, int2 inputSizeMinusOne)
+void kernel layerAssignQ(read_only image3d_t cellStatesPrev, read_only image3d_t cellQValuesPrev, read_only image2d_t columnStates, read_only image2d_t columnQValues, read_only image2d_t nextLayerContextColumnStates, read_only image2d_t nextLayerColumnQValues, write_only image3d_t cellQValues,
+	int cellsInColumn, int nextLayerCellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float2 layerSizeMinusOneInv, int2 nextLayerSize, int2 nextLayerSizeMinusOne, float reward, float alpha, float gamma)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	float2 inputCenterPositionNormalized = (float2)(columnPosition.x * layerSizeMinusOneInv.x, columnPosition.y * layerSizeMinusOneInv.y);
-	float2 inputCenterPosition = (float2)(inputCenterPositionNormalized.x * inputSizeMinusOne.x, inputCenterPositionNormalized.y * inputSizeMinusOne.y);
 	
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float sum = 0.0f;
+	float2 normalizedColumnCoords = (float2)(columnPosition.x * layerSizeMinusOneInv.x, columnPosition.y * layerSizeMinusOneInv.y);
+	int2 connectionCoordsNextCenter = (int2)(normalizedColumnCoords.x * nextLayerSizeMinusOne.x, normalizedColumnCoords.y * nextLayerSizeMinusOne.y);
 		
-		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
-		
-		// Go through all connections 
-		int wi = 0;
-		
-		for (int dx = -nodeFieldRadius.x; dx <= nodeFieldRadius.x; dx++)
-		for (int dy = -nodeFieldRadius.y; dy <= nodeFieldRadius.y; dy++) {
-			int2 connectionCoords = (int2)(inputCenterPosition.x + dx, inputCenterPosition.y + dy);
+	float qSum = 0.0f;
+	float divisor = 0.0f;
+
+	// Go through all connections 
+	for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
+	for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
+		int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
 			
-			if (connectionCoords.x >= 0 && connectionCoords.x < inputSize.x && connectionCoords.y >= 0 && connectionCoords.y < inputSize.y) {	
-				for (int cio = 0; cio < inputCellsPerColumn; cio++) {
-					int weightCoord = cio + (nodeFieldRadius.y + dy) * inputCellsPerColumn + (nodeFieldRadius.x + dx) * inputCellsPerColumn * (nodeFieldRadius.y * 2 + 1);
-					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, weightCoord, 0);
+		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {	
+			float nextQ = read_imagef(columnQValues, connectionCoords).x;
 				
-					float nodeWeight = read_imagef(nodeWeights, weightPosition).x;
+			float sourceColumnState = read_imagef(columnStates, connectionCoords).x;
 			
-					float connectionState = read_imagef(nodeStatesInput, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
+			float contribution = sourceColumnState;
+			
+			qSum += contribution * nextQ;
+			divisor += contribution;
+			
+			int2 connectionCoordsNext = (int2)(connectionCoordsNextCenter.x + dx, connectionCoordsNextCenter.y + dy);
+			
+			if (connectionCoordsNext.x >= 0 && connectionCoordsNext.x < nextLayerSize.x && connectionCoordsNext.y >= 0 && connectionCoordsNext.y < nextLayerSize.y) {
+				float nextQ = read_imagef(nextLayerColumnQValues, connectionCoordsNext).x;
 					
-					sum += nodeWeight * connectionState;
-					
-					wi++;
-				}
-			}
-			else
-				wi += inputCellsPerColumn;
-		}
+				float sourceColumnStateNext = read_imagef(nextLayerContextColumnStates, connectionCoordsNext).x;
 		
-		float bias = read_imagef(nodeBiases, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		sum += bias;
-		
-		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		float sig = sigmoid(sum * nodeOutputIntensity);
-		
-		float nodeOutput = sig * cellState;
-		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, sig * (1.0f - sig) * cellState, 0.0f, 0.0f));
-	}
-}
-
-void kernel layerNodeActivateFirst(read_only image2d_t statesInput, read_only image3d_t cellStates, read_only image3d_t nodeBiases, read_only image3d_t nodeWeights, write_only image3d_t nodeOutputs,
-	int cellsInColumn, int2 nodeFieldRadius, float2 layerSizeMinusOneInv, int2 inputSize, int2 inputSizeMinusOne)
-{
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	float2 inputCenterPositionNormalized = (float2)(columnPosition.x * layerSizeMinusOneInv.x, columnPosition.y * layerSizeMinusOneInv.y);
-	float2 inputCenterPosition = (float2)(inputCenterPositionNormalized.x * inputSizeMinusOne.x, inputCenterPositionNormalized.y * inputSizeMinusOne.y);
-	
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float sum = 0.0f;
-		
-		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
-		
-		// Go through all connections 
-		int wi = 0;
-		
-		for (int dx = -nodeFieldRadius.x; dx <= nodeFieldRadius.x; dx++)
-		for (int dy = -nodeFieldRadius.y; dy <= nodeFieldRadius.y; dy++) {
-			int2 connectionCoords = (int2)(inputCenterPosition.x + dx, inputCenterPosition.y + dy);
-			
-			if (connectionCoords.x >= 0 && connectionCoords.x < inputSize.x && connectionCoords.y >= 0 && connectionCoords.y < inputSize.y) {
-				int weightCoord = (nodeFieldRadius.y + dy) + (nodeFieldRadius.x + dx) * (nodeFieldRadius.y * 2 + 1);
-				int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, weightCoord, 0);
-			
-				float nodeWeight = read_imagef(nodeWeights, weightPosition).x;
-		
-				float connectionState = read_imagef(statesInput, connectionCoords).x;
+				float contribution = sourceColumnStateNext;
 				
-				sum += nodeWeight * connectionState;
-			}
-			
-			wi++;
-		}
-		
-		float bias = read_imagef(nodeBiases, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		sum += bias;
-		
-		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		float sig = sigmoid(sum * nodeOutputIntensity);
-		
-		float nodeOutput = sig * cellState;
-		
-		write_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(nodeOutput, sig * (1.0f - sig) * cellState, 0.0f, 0.0f));
-	}
-}
-
-void kernel weighOutput(read_only image3d_t statesInput, read_only image3d_t weights, write_only image2d_t partialSums, int inputCellsPerColumn) {
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	
-	float partialSum = 0.0f;
-	
-	for (int ci = 0; ci < inputCellsPerColumn; ci++) {
-		float nodeState = read_imagef(statesInput, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		float weight = read_imagef(weights, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		partialSum += nodeState * weight;
-	}
-	
-	write_imagef(partialSums, columnPosition, (float4)(partialSum, partialSum, partialSum, partialSum));
-}
-
-void kernel layerNodeBackpropagateLast(read_only image3d_t weights, read_only image3d_t lastLayerNodeOutputs, read_only image3d_t lastLayerCellStates, write_only image3d_t lastLayerNodeErrors, int cellsPerColumn, float qError) {
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	
-	for (int ci = 0; ci < cellsPerColumn; ci++) {
-		float weight = read_imagef(weights, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		//float cellState = read_imagef(lastLayerCellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		float deriv = read_imagef(lastLayerNodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
-		float error = qError * weight * deriv;
-		
-		write_imagef(lastLayerNodeErrors, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(error, error, error, error));
-	}
-}
-
-void kernel layerNodeBackpropagate(read_only image3d_t nextLayerNodeErrors, read_only image3d_t nextLayerNodeWeights, read_only image3d_t nodeOutputs, read_only image3d_t cellStates, write_only image3d_t nodeErrors,
-	int cellsPerColumn, int2 layerSizeMinusOne, float2 layerSizeMinusOneInv, int2 nextLayerSize, int2 nextLayerSizeMinusOne, float2 nextLayerSizeMinusOneInv, int nextLayerCellsPerColumn, int2 reverseNodeFieldSize, int2 nextLayerReceptiveSize)
-{
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	float2 centerPositionNormalized = (float2)(columnPosition.x * layerSizeMinusOneInv.x, columnPosition.y * layerSizeMinusOneInv.y);
-	float2 nextCenterPosition = (float2)(centerPositionNormalized.x * nextLayerSizeMinusOne.x, centerPositionNormalized.y * nextLayerSizeMinusOne.y);
-	
-	for (int ci = 0; ci < cellsPerColumn; ci++) {
-		float sum = 0.0f;
-		
-		for (int dx = -reverseNodeFieldSize.x; dx <= reverseNodeFieldSize.x; dx++)
-		for (int dy = -reverseNodeFieldSize.y; dy <= reverseNodeFieldSize.y; dy++) {
-			int2 nextColumnPosition = (int2)(nextCenterPosition.x + dx, nextCenterPosition.y + dy);
-		
-			if (nextColumnPosition.x >= 0 && nextColumnPosition.x < nextLayerSize.x && nextColumnPosition.y >= 0 && nextColumnPosition.y < nextLayerSize.y) {
-				// Next layer node's receptive field
-				int2 fieldCenter = (int2)(nextColumnPosition.x * nextLayerSizeMinusOneInv.x * layerSizeMinusOne.x, nextColumnPosition.y * nextLayerSizeMinusOneInv.y * layerSizeMinusOne.y);
-
-				int2 fieldLowerBounds = fieldCenter - nextLayerReceptiveSize;
-				int2 fieldUpperBounds = fieldCenter + nextLayerReceptiveSize;
-			
-				// Check for containment
-				if (columnPosition.x >= fieldLowerBounds.x && columnPosition.x <= fieldUpperBounds.x && columnPosition.y >= fieldLowerBounds.y && columnPosition.y <= fieldUpperBounds.y) {	
-					int rdx = columnPosition.x - fieldCenter.x;
-					int rdy = columnPosition.y - fieldCenter.y;
-					
-					for (int cio = 0; cio < nextLayerCellsPerColumn; cio++) {
-						float nodeError = read_imagef(nextLayerNodeErrors, (int4)(nextColumnPosition.x, nextColumnPosition.y, cio, 0)).x;
-					
-						int weightSecondCoordinate = cio + nextColumnPosition.y * nextLayerCellsPerColumn;
-						int weightThirdCoordinate = ci + (nextLayerReceptiveSize.y + rdy) * cellsPerColumn + (nextLayerReceptiveSize.x + rdx) * cellsPerColumn * (nextLayerReceptiveSize.y * 2 + 1);
-					
-						int4 weightCoord = (int4)(nextColumnPosition.x, weightSecondCoordinate, weightThirdCoordinate, 0);
-						
-						float weight = read_imagef(nextLayerNodeWeights, weightCoord).x;
-						
-						sum += nodeError * weight;
-					}
-				}
+				qSum += contribution * nextQ;
+				divisor += contribution;
 			}
 		}
-	
-		//float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		float deriv = read_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
-		float error = sum * deriv;
+	}
 		
-		write_imagef(nodeErrors, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(error, error, error, error));
+	for (int ci = 0; ci < cellsInColumn; ci++) {
+		float cellState = read_imagef(cellStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+	
+		if (divisor != 0.0f) {
+			float receivedQ = qSum / divisor;
+			
+			float qPrev = read_imagef(cellQValuesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+			
+			float newQ = reward + gamma * receivedQ;
+			
+			float tdError = newQ - qPrev;
+			
+			float updateQ = qPrev + alpha * cellState * tdError;
+			
+			write_imagef(cellQValues, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(updateQ, tdError, 0.0f, 0.0f));
+		}
 	}
 }
 
-void kernel layerNodeBackpropagateToInput(read_only image3d_t nextLayerNodeErrors, read_only image3d_t nextLayerNodeWeights, read_only image2d_t inputs, write_only image2d_t inputErrors,
-	int2 layerSizeMinusOne, float2 layerSizeMinusOneInv, int2 nextLayerSize, int2 nextLayerSizeMinusOne, float2 nextLayerSizeMinusOneInv, int nextLayerCellsPerColumn, int2 reverseNodeFieldSize, int2 nextLayerReceptiveSize)
+void kernel layerAssignQLast(read_only image3d_t cellStatesPrev, read_only image3d_t cellQValuesPrev, read_only image2d_t columnStates, read_only image2d_t columnQValues, write_only image3d_t cellQValues,
+	int cellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float reward, float alpha, float gamma)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	float2 centerPositionNormalized = (float2)(columnPosition.x * layerSizeMinusOneInv.x, columnPosition.y * layerSizeMinusOneInv.y);
-	float2 nextCenterPosition = (float2)(centerPositionNormalized.x * nextLayerSizeMinusOne.x, centerPositionNormalized.y * nextLayerSizeMinusOne.y);
+	
+	float qSum = 0.0f;
+	float divisor = 0.0f;
+	
+	// Go through all connections 
+	for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
+	for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
+		int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
+			
+		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {	
+			float nextQ = read_imagef(columnQValues, connectionCoords).x;
+				
+			float sourceColumnState = read_imagef(columnStates, connectionCoords).x;
+			
+			float contribution = sourceColumnState;
+			
+			qSum += contribution * nextQ;
+			divisor += contribution;
+		}
+	}
+		
+	for (int ci = 0; ci < cellsInColumn; ci++) {
+		float cellState = read_imagef(cellStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		
+		if (divisor != 0.0f) {
+			float receivedQ = qSum / divisor;
+			
+			float qPrev = read_imagef(cellQValuesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+			
+			float newQ = reward + gamma * receivedQ;
+			
+			float tdError = newQ - qPrev;
+			
+			float updateQ = qPrev + alpha * cellState * tdError;
+			
+			write_imagef(cellQValues, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(updateQ, tdError, 0.0f, 0.0f));
+		}
+	}
+}
+
+void kernel layerColumnQ(read_only image3d_t cellQValues, read_only image3d_t cellStates, write_only image2d_t columnQValues, int cellsInColumn) {
+	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
 	float sum = 0.0f;
-	
-	for (int dx = -reverseNodeFieldSize.x; dx <= reverseNodeFieldSize.x; dx++)
-	for (int dy = -reverseNodeFieldSize.y; dy <= reverseNodeFieldSize.y; dy++) {
-		int2 nextColumnPosition = (int2)(nextCenterPosition.x + dx, nextCenterPosition.y + dy);
-		
-		if (nextColumnPosition.x >= 0 && nextColumnPosition.x < nextLayerSize.x && nextColumnPosition.y >= 0 && nextColumnPosition.y < nextLayerSize.y) {
-			// Next layer node's receptive field
-			int2 fieldCenter = (int2)(nextColumnPosition.x * nextLayerSizeMinusOneInv.x * layerSizeMinusOne.x, nextColumnPosition.y * nextLayerSizeMinusOneInv.y * layerSizeMinusOne.y);
-
-			int2 fieldLowerBounds = fieldCenter - nextLayerReceptiveSize;
-			int2 fieldUpperBounds = fieldCenter + nextLayerReceptiveSize;
-		
-			// Check for containment
-			if (columnPosition.x >= fieldLowerBounds.x && columnPosition.x <= fieldUpperBounds.x && columnPosition.y >= fieldLowerBounds.y && columnPosition.y <= fieldUpperBounds.y) {	
-				int rdx = columnPosition.x - fieldCenter.x;
-				int rdy = columnPosition.y - fieldCenter.y;
-				
-				for (int cio = 0; cio < nextLayerCellsPerColumn; cio++) {
-					float nodeError = read_imagef(nextLayerNodeErrors, (int4)(nextColumnPosition.x, nextColumnPosition.y, cio, 0)).x;
-				
-					int weightSecondCoordinate = cio + nextColumnPosition.y * nextLayerCellsPerColumn;
-					
-					int weightThirdCoordinate = (nextLayerReceptiveSize.y + rdy) + (nextLayerReceptiveSize.x + rdx) * (nextLayerReceptiveSize.y * 2 + 1);
-					
-					int4 weightCoord = (int4)(nextColumnPosition.x, weightSecondCoordinate, weightThirdCoordinate, 0);
-					
-					float weight = read_imagef(nextLayerNodeWeights, weightCoord).x;
-					
-					sum += nodeError * weight;
-				}
-			}
-		}
-	}
-
-	//float input = read_imagef(inputs, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-	//float sigmoid = read_imagef(nodeOutputs, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
-	float error = sum;
-	
-	write_imagef(inputErrors, columnPosition, (float4)(error, error, error, error));
-}
-
-void kernel layerNodeWeightUpdate(read_only image3d_t layerNodeErrors, read_only image3d_t statesInput, read_only image3d_t nodeBiasesPrev, read_only image3d_t nodeWeightsPrev, write_only image3d_t nodeBiases, write_only image3d_t nodeWeights,
-	int cellsInColumn, int inputCellsPerColumn, int2 nodeFieldRadius, float2 layerSizeMinusOneInv, int2 inputSize, int2 inputSizeMinusOne, float alpha, float beta, float temperature, float eligibilityDecay)
-{
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	float2 inputCenterPositionNormalized = (float2)(columnPosition.x * layerSizeMinusOneInv.x, columnPosition.y * layerSizeMinusOneInv.y);
-	float2 inputCenterPosition = (float2)(inputCenterPositionNormalized.x * inputSizeMinusOne.x, inputCenterPositionNormalized.y * inputSizeMinusOne.y);
+	float divisor = 0.0f;
+	float minQ = 999999.0f;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
-		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
+		float state = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		float cellQ = read_imagef(cellQValues, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
-		float error = read_imagef(layerNodeErrors, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-
-		// Go through all connections 
-		int wi = 0;
+		sum += state * cellQ;
+		divisor += state;
 		
-		for (int dx = -nodeFieldRadius.x; dx <= nodeFieldRadius.x; dx++)
-		for (int dy = -nodeFieldRadius.y; dy <= nodeFieldRadius.y; dy++) {
-			int2 connectionCoords = (int2)(inputCenterPosition.x + dx, inputCenterPosition.y + dy);
-			
-			if (connectionCoords.x >= 0 && connectionCoords.x < inputSize.x && connectionCoords.y >= 0 && connectionCoords.y < inputSize.y) {	
-				for (int cio = 0; cio < inputCellsPerColumn; cio++) {
-					int weightCoord = cio + (nodeFieldRadius.y + dy) * inputCellsPerColumn + (nodeFieldRadius.x + dx) * inputCellsPerColumn * (nodeFieldRadius.y * 2 + 1);
-					int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, weightCoord, 0);
-				
-					float2 nodeWeightPrev = read_imagef(nodeWeightsPrev, weightPosition).xy;
-			
-					float connectionState = read_imagef(statesInput, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
-					
-					float eligibility = error * connectionState;
-				
-					float2 newNodeWeight = (float2)(nodeWeightPrev.x + alpha * nodeWeightPrev.y, (1.0f - eligibilityDecay) * nodeWeightPrev.y + beta * (sign(nodeWeightPrev.y) == sign(eligibility) ? exp(-temperature * fabs(nodeWeightPrev.y)) : 1.0f) * eligibility);
-				
-					write_imagef(nodeWeights, weightPosition, (float4)(newNodeWeight.x, newNodeWeight.y, 0.0f, 0.0f));
-					
-					wi++;
-				}
-			}
-			else
-				wi += inputCellsPerColumn;
-		}
-		
-		float2 biasPrev = read_imagef(nodeBiasesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
-		
-		float2 newBias = (float2)(biasPrev.x + alpha * biasPrev.y, (1.0f - eligibilityDecay) * biasPrev.y + beta * (sign(biasPrev.y) == sign(error) ? exp(-temperature * fabs(biasPrev.y)) : 1.0f) * error);
-		
-		write_imagef(nodeBiases, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newBias.x, newBias.y, 0.0f, 0.0f));
+		minQ = fmin(minQ, cellQ);
 	}
+	
+	float output;
+	
+	if (divisor == 0.0f)
+		output = minQ;
+	else
+		output = sum / divisor;
+
+	write_imagef(columnQValues, columnPosition, (float4)(output, output, output, output));
 }
 
-void kernel layerNodeWeightUpdateFirst(read_only image3d_t layerNodeErrors, read_only image2d_t statesInput, read_only image3d_t nodeBiasesPrev, read_only image3d_t nodeWeightsPrev, write_only image3d_t nodeBiases, write_only image3d_t nodeWeights,
-	int cellsInColumn, int2 nodeFieldRadius, float2 layerSizeMinusOneInv, int2 inputSize, int2 inputSizeMinusOne, float alpha, float beta, float temperature, float eligibilityDecay)
-{
+void kernel layerColumnTdError(read_only image2d_t columnStatesPrev, read_only image3d_t cellQValues, read_only image3d_t cellStatesPrev, write_only image2d_t columnTdErrors, int cellsInColumn) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	float2 inputCenterPositionNormalized = (float2)(columnPosition.x * layerSizeMinusOneInv.x, columnPosition.y * layerSizeMinusOneInv.y);
-	float2 inputCenterPosition = (float2)(inputCenterPositionNormalized.x * inputSizeMinusOne.x, inputCenterPositionNormalized.y * inputSizeMinusOne.y);
 	
+	float columnStatePrev = read_imagef(columnStatesPrev, columnPosition).x;
+	
+	float sum = 0.0f;
+	float divisor = 0.0f;
+
 	for (int ci = 0; ci < cellsInColumn; ci++) {
-		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
+		float state = read_imagef(cellStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		float tdError = read_imagef(cellQValues, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
 		
-		float error = read_imagef(layerNodeErrors, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-
-		// Go through all connections 
-		int wi = 0;
-		
-		for (int dx = -nodeFieldRadius.x; dx <= nodeFieldRadius.x; dx++)
-		for (int dy = -nodeFieldRadius.y; dy <= nodeFieldRadius.y; dy++) {
-			int2 connectionCoords = (int2)(inputCenterPosition.x + dx, inputCenterPosition.y + dy);
-			
-			if (connectionCoords.x >= 0 && connectionCoords.x < inputSize.x && connectionCoords.y >= 0 && connectionCoords.y < inputSize.y) {	
-				int weightCoord = (nodeFieldRadius.y + dy) + (nodeFieldRadius.x + dx) * (nodeFieldRadius.y * 2 + 1);
-				int4 weightPosition = (int4)(columnPosition.x, weightSecondCoordinate, weightCoord, 0);
-			
-				float2 nodeWeightPrev = read_imagef(nodeWeightsPrev, weightPosition).xy;
-		
-				float connectionState = read_imagef(statesInput, connectionCoords).x;
-				
-				float eligibility = error * connectionState;
-				
-				float2 newNodeWeight = (float2)(nodeWeightPrev.x + alpha * nodeWeightPrev.y, (1.0f - eligibilityDecay) * nodeWeightPrev.y + beta * (sign(nodeWeightPrev.y) == sign(eligibility) ? exp(-temperature * fabs(nodeWeightPrev.y)) : 1.0f) * eligibility);
-				
-				write_imagef(nodeWeights, weightPosition, (float4)(newNodeWeight.x, newNodeWeight.y, 0.0f, 0.0f));
-			}
-			
-			wi++;
-		}
-		
-		float2 biasPrev = read_imagef(nodeBiasesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
-		
-		float2 newBias = (float2)(biasPrev.x + alpha * biasPrev.y, (1.0f - eligibilityDecay) * biasPrev.y + beta * (sign(biasPrev.y) == sign(error) ? exp(-temperature * fabs(biasPrev.y)) : 1.0f) * error);
-		
-		write_imagef(nodeBiases, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newBias.x, newBias.y, 0.0f, 0.0f));
+		sum += state * tdError;
+		divisor += state;
 	}
-}
-
-void kernel layerNodeWeightUpdateLast(read_only image3d_t statesInput, read_only image3d_t weightsPrev, write_only image3d_t weights, int inputCellsPerColumn, float alpha, float beta, float temperature, float eligibilityDecay) {
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
-	for (int ci = 0; ci < inputCellsPerColumn; ci++) {
-		float nodeState = read_imagef(statesInput, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		float2 weightPrev = read_imagef(weightsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
-		
-		float2 newWeight = (float2)(weightPrev.x + alpha * weightPrev.y, (1.0f - eligibilityDecay) * weightPrev.y + beta * (sign(weightPrev.y) == sign(nodeState) ? exp(-temperature * fabs(weightPrev.y)) : 1.0f) * nodeState);
-		
-		write_imagef(weights, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newWeight.x, newWeight.y, 0.0f, 0.0f));
-	}
+	float output;
+	
+	if (divisor == 0.0f)
+		output = 0.0f;
+	else
+		output = sum / divisor * columnStatePrev;
+
+	write_imagef(columnTdErrors, columnPosition, (float4)(output, output, output, output));
 }
 
 void kernel reconstructInput(read_only image3d_t sdrCenters, read_only image2d_t sdr, write_only image2d_t inputs,

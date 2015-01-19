@@ -17,7 +17,7 @@ namespace htm {
 	class HTMRL {
 	public:
 		enum InputType {
-			_state, _action, _unused
+			_state, _action, _q, _unused
 		};
 
 		struct LayerDesc {
@@ -41,7 +41,7 @@ namespace htm {
 			float _blurKernelWidthMuliplier;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(3), _nodeFieldRadius(3), _lateralConnectionRadius(5), _inhibitionRadius(3), _dutyCycleRadius(4), _cellsInColumn(3),
+				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(5), _lateralConnectionRadius(5), _inhibitionRadius(3), _dutyCycleRadius(4), _cellsInColumn(6),
 				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.1f), _noMatchIntensity(8.0f), _numBlurPasses(1), _blurKernelWidthMuliplier(0.25f)
 			{}
 		};
@@ -72,21 +72,27 @@ namespace htm {
 			cl::Image3D _cellStatesPrev;
 			cl::Image3D _cellStates;
 
+			// Contain both Q and tdError
+			cl::Image3D _cellQValuesPrev;
+			cl::Image3D _cellQValues;
+
+			// Contains just Q
+			cl::Image2D _columnQValues;
+
+			// Contains just tdError
+			cl::Image2D _columnTdErrors;
+
 			cl::Image3D _cellPredictionsPrev;
 			cl::Image3D _cellPredictions;
 
-			// Nodes are like neurons in a conventional neural network
-			cl::Image3D _nodeOutputs;
-			cl::Image3D _nodeErrors;
-
-			cl::Image3D _nodeBiasesPrev;
-			cl::Image3D _nodeBiases;
-
-			cl::Image3D _nodeWeightsPrev;
-			cl::Image3D _nodeWeights;
-
 			cl::Image2D _blurredLayerOutputsPing;
 			cl::Image2D _blurredLayerOutputsPong;
+
+			float _tdError;
+
+			Layer()
+				: _tdError(0.0f)
+			{}
 		};
 
 		int _inputWidth, _inputHeight;
@@ -104,17 +110,10 @@ namespace htm {
 		cl::Kernel _layerCellPredictLastKernel;
 		cl::Kernel _layerColumnWeightUpdateKernel;
 		cl::Kernel _layerColumnPredictionKernel;
-
-		// For nodes
-		cl::Kernel _layerNodeActivateKernel;
-		cl::Kernel _layerNodeActivateFirstKernel;
-		cl::Kernel _weighOutputKernel;
-		cl::Kernel _layerNodeBackpropagateKernel;
-		cl::Kernel _layerNodeBackpropagateLastKernel;
-		cl::Kernel _layerNodeBackpropagateToInputKernel;
-		cl::Kernel _layerNodeWeightUpdateKernel;
-		cl::Kernel _layerNodeWeightUpdateFirstKernel;
-		cl::Kernel _layerNodeWeightUpdateLastKernel;
+		cl::Kernel _layerColumnQKernel;
+		cl::Kernel _layerColumnTdErrorKernel;
+		cl::Kernel _layerAssignQKernel;
+		cl::Kernel _layerAssignQLastKernel;
 
 		// For blur
 		cl::Kernel _gaussianBlurXKernel;
@@ -128,6 +127,7 @@ namespace htm {
 		std::vector<InputType> _inputTypes;
 
 		std::vector<float> _output;
+		std::vector<float> _prediction;
 		std::vector<float> _exploratoryOutput;
 		std::vector<float> _prevOutput;
 		std::vector<float> _prevOutputExploratory;
@@ -139,59 +139,38 @@ namespace htm {
 		float _prevQ;
 		float _prevTDError;
 
+		AnythingEncoder _qEncoder;
+		std::vector<int> _qIndices;
+
 		cl::Image2D _inputImage;
-		cl::Image2D _inputErrors;
-
-		cl::Image3D _outputWeightsPrev;
-		cl::Image3D _outputWeights;
-
-		cl::Image2D _partialSums;
 
 		cl::Image2D _reconstruction;
 
-		int _reconstructionReceptiveRadius;
-
-		float _outputBias;
-
 		void stepBegin();
 
-		void activate(std::vector<float> &input, sys::ComputeSystem &cs, bool predict, unsigned long seed);
+		void activate(std::vector<float> &input, sys::ComputeSystem &cs, float reward, float alpha, float gamma, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, unsigned long seed);
 	
 		void learnSpatial(sys::ComputeSystem &cs, float columnConnectionAlpha, float widthAlpha, unsigned long seed);
 		
-		void learnTemporal(sys::ComputeSystem &cs, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, unsigned long seed);
-
-		void learnSpatialTemporal(sys::ComputeSystem &cs, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, unsigned long seed);
+		void learnTemporal(sys::ComputeSystem &cs, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, unsigned long seed);
 
 		void dutyCycleUpdate(sys::ComputeSystem &cs, float activationDutyCycleDecay, float stateDutyCycleDecay);
 
-		float getQ(sys::ComputeSystem &cs);
-		void nodeActivate(std::vector<float> &input, sys::ComputeSystem &cs);
-		void backpropagateToInputs(sys::ComputeSystem &cs, float qError, std::vector<float> &inputs);
-		void backpropagate(sys::ComputeSystem &cs, float qError);
-		void nodeLearn(sys::ComputeSystem &cs, float qError, float outputAlpha, float outputBeta, float outputTemperature, float eligibilityDecay);
+		float gatherLayerTdError(Layer &layer, LayerDesc &layerDesc);
 
-		void initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, cl::Kernel &initPartThreeKernel, int inputWidth, int inputHeight, int inputCellsPerColumn, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
+		void initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, int inputWidth, int inputHeight, int inputCellsPerColumn, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
 		void activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
 		void predictLayer(sys::ComputeSystem &cs, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
 		void predictLayerLast(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
+		void determineLayerColumnQ(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc);
+		void determineLayerColumnTdError(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc);
+		void assignLayerQ(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, Layer &nextLayer, LayerDesc &nextLayerDesc, float reward, float alpha, float gamma);
+		void assignLayerQLast(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, float reward, float alpha, float gamma);
 		void learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, std::mt19937 &generator);
-		void learnLayerTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, std::mt19937 &generator);
-		void learnLayerTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, std::mt19937 &generator);
-		void learnLayerSpatialTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, std::mt19937 &generator);
-		void learnLayerSpatialTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float traceFactorA, float traceFactorB, std::mt19937 &generator);
+		void learnLayerTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, std::mt19937 &generator);
+		void learnLayerTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, std::mt19937 &generator);
 		void dutyCycleLayerUpdate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, float activationDutyCycleDecay, float stateDutyCycleDecay);
 		
-		// Node functions
-		void layerNodeActivate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, const LayerDesc &inputDesc, cl::Image3D &inputImage);
-		void layerNodeActivateFirst(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, cl::Image2D &inputImage);
-		void layerNodeBackpropagate(sys::ComputeSystem &cs, Layer &layer, Layer &nextLayer, const LayerDesc &layerDesc, const LayerDesc &nextDesc);
-		void layerNodeBackpropagateLast(sys::ComputeSystem &cs, float qError);
-		void layerNodeBackpropagateToInput(sys::ComputeSystem &cs);
-		void layerNodeWeightUpdate(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, const LayerDesc &inputDesc, cl::Image3D &inputImage, float alpha, float beta, float temperature, float eligibilityDecay);
-		void layerNodeWeightUpdateFirst(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, cl::Image2D &inputImage, float alpha, float beta, float temperature, float eligibilityDecay);
-		void layerNodeWeightUpdateLast(sys::ComputeSystem &cs, float qError, float alpha, float beta, float temperature, float eligibilityDecay);
-
 		// Reconstruction
 		void getReconstruction(std::vector<float> &reconstruction, sys::ComputeSystem &cs);
 		void getReconstructedPrediction(std::vector<float> &prediction, sys::ComputeSystem &cs);
@@ -200,10 +179,15 @@ namespace htm {
 		// Blur
 		void gaussianBlur(sys::ComputeSystem &cs, cl::Image2D &source, cl::Image2D &ping, cl::Image2D &pong, int imageSizeX, int imageSizeY, int passes, float kernelWidth);
 
+		// Q
+		float reconstructQFromInput(const std::vector<float> &input);
+		void assignInputsFromQ(std::vector<float> &input, float q, float encoderLocalActivity, float encoderOutputIntensity, float encoderDutyCycleDecay);
+		void learnQReconstruction(float q, float encoderCenterAlpha, float encoderMaxDutyCycleForLearn, float encoderNoMatchIntensity);
+
 	public:
-		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
+		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitEncoderCenter, float maxInitEncoderCenter, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float outputAlpha, float outputBeta, float outputTemperature, float nodeEligibilityDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float qBiasAlpha, int deriveMaxQIterations, float deriveMaxQAlpha, float deriveMaxQError, float deriveQMutationStdDev, float deriveMaxQMutationDecay, float deriveMaxQMomentum, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float outputAlpha, float outputBeta, float outputTemperature, float nodeEligibilityDecay, float columnConnectionAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float encoderAlpha, float encoderLocalActivity, float encoderOutputIntensity, float encoderDutyCycleDecay, float encoderMaxDutyCycleForLearn, float encoderNoMatchIntensity, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
@@ -226,7 +210,7 @@ namespace htm {
 		}
 
 		float getOutput(int i) const {
-			return _exploratoryOutput[i];
+			return _input[i];
 		}
 
 		float getOutput(int x, int y) const {
