@@ -139,7 +139,7 @@ int main() {
 
 	layerDescs[0]._width = 64;
 	layerDescs[0]._height = 64;
-	layerDescs[0]._inhibitionRadius = 3;
+	layerDescs[0]._inhibitionRadius = 4;
 	layerDescs[0]._noMatchIntensity = 512.0f;
 	layerDescs[0]._nodeAlpha = 1.0f;
 
@@ -150,19 +150,19 @@ int main() {
 
 	layerDescs[1]._width = 44;
 	layerDescs[1]._height = 44;
-	layerDescs[1]._inhibitionRadius = 3;
+	layerDescs[1]._inhibitionRadius = 4;
 	layerDescs[1]._noMatchIntensity = 512.0f;
 	layerDescs[1]._nodeAlpha = 0.5f;
 
 	layerDescs[2]._width = 32;
 	layerDescs[2]._height = 32;
-	layerDescs[2]._inhibitionRadius = 3;
+	layerDescs[2]._inhibitionRadius = 4;
 	layerDescs[2]._noMatchIntensity = 512.0f;
 	layerDescs[2]._nodeAlpha = 0.1f;
 
 	layerDescs[3]._width = 20;
 	layerDescs[3]._height = 20;
-	layerDescs[3]._inhibitionRadius = 3;
+	layerDescs[3]._inhibitionRadius = 4;
 	layerDescs[3]._noMatchIntensity = 512.0f;
 	layerDescs[3]._nodeAlpha = 0.05f;
 
