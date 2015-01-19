@@ -302,7 +302,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 }
 
 void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
-	write_only image3d_t cellStates, int cellsInColumn, int2 lateralConnectionsRadii, uint2 seed)
+	write_only image3d_t cellStates, int cellsInColumn, int2 lateralConnectionsRadii, float cellTraceDecay, uint2 seed)
 {
 	/*uint2 seedValue = seed + (uint2)(get_global_id(0), get_global_id(1)) * 84;
 
@@ -371,7 +371,11 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 		
 		float newCellState = exp((minPredictionError - predictionError) * cellStateIntensity) * columnState;
 	
-		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellState, newCellState, newCellState, newCellState));
+		float prevTrace = read_imagef(cellStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
+	
+		float newTrace = fmax((1.0f - cellTraceDecay) * prevTrace, newCellState);
+	
+		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellState, newTrace, 0.0f, 0.0f));
 	}
 }
 
@@ -720,7 +724,7 @@ void kernel layerAssignQ(read_only image3d_t cellStatesPrev, read_only image3d_t
 	}
 		
 	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float cellState = read_imagef(cellStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		float cellEligibility = read_imagef(cellStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
 	
 		if (divisor != 0.0f) {
 			float receivedQ = qSum / divisor;
@@ -729,9 +733,9 @@ void kernel layerAssignQ(read_only image3d_t cellStatesPrev, read_only image3d_t
 			
 			float newQ = reward + gamma * receivedQ;
 			
-			float tdError = newQ - qPrev;
+			float tdError = cellEligibility * (newQ - qPrev);
 			
-			float updateQ = qPrev + alpha * cellState * tdError;
+			float updateQ = qPrev + alpha * tdError;
 			
 			write_imagef(cellQValues, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(updateQ, tdError, 0.0f, 0.0f));
 		}
@@ -764,7 +768,7 @@ void kernel layerAssignQLast(read_only image3d_t cellStatesPrev, read_only image
 	}
 		
 	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float cellState = read_imagef(cellStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		float cellEligibility = read_imagef(cellStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
 		
 		if (divisor != 0.0f) {
 			float receivedQ = qSum / divisor;
@@ -773,9 +777,9 @@ void kernel layerAssignQLast(read_only image3d_t cellStatesPrev, read_only image
 			
 			float newQ = reward + gamma * receivedQ;
 			
-			float tdError = newQ - qPrev;
+			float tdError = cellEligibility * (newQ - qPrev);
 			
-			float updateQ = qPrev + alpha * cellState * tdError;
+			float updateQ = qPrev + alpha * tdError;
 			
 			write_imagef(cellQValues, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(updateQ, tdError, 0.0f, 0.0f));
 		}

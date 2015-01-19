@@ -331,7 +331,7 @@ void HTMRL::stepBegin() {
 	}
 }
 
-void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator) {
+void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, Layer &layer, const LayerDesc &layerDesc, float cellStateDecay, std::mt19937 &generator) {
 	struct Uint2 {
 		unsigned int _x, _y;
 	};
@@ -423,7 +423,8 @@ void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, 
 	_layerCellActivateKernel.setArg(5, layer._cellStates);
 	_layerCellActivateKernel.setArg(6, layerDesc._cellsInColumn);
 	_layerCellActivateKernel.setArg(7, lateralConnectionRadii);
-	_layerCellActivateKernel.setArg(8, seed2);
+	_layerCellActivateKernel.setArg(8, cellStateDecay);
+	_layerCellActivateKernel.setArg(9, seed2);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerCellActivateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 }
@@ -526,7 +527,7 @@ void HTMRL::predictLayerLast(sys::ComputeSystem &cs, Layer &layer, const LayerDe
 	cs.getQueue().flush();
 }
 
-void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float reward, float alpha, float gamma, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, unsigned long seed) {
+void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float reward, float alpha, float gamma, float cellStateDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, unsigned long seed) {
 	// Create buffer from input
 	{
 		cl::size_t<3> origin;
@@ -549,7 +550,7 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 	int prevLayerHeight = _inputHeight;
 
 	for (int l = 0; l < _layers.size(); l++) {
-		activateLayer(cs, *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layers[l], _layerDescs[l], generator);
+		activateLayer(cs, *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layers[l], _layerDescs[l], cellStateDecay, generator);
 		
 		// Blur output
 		gaussianBlur(cs, _layers[l]._columnStates, _layers[l]._blurredLayerOutputsPing, _layers[l]._blurredLayerOutputsPong, _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._numBlurPasses, _layerDescs[l]._blurKernelWidthMuliplier);
@@ -577,6 +578,8 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 
 	for (int l = _layers.size() - 1; l >= 0; l--)
 		determineLayerColumnTdError(cs, _layers[l], _layerDescs[l]);
+
+	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
 
 	learnSpatial(cs, columnConnectionAlpha, widthAlpha, seed);
 
@@ -1254,14 +1257,14 @@ void HTMRL::learnQReconstruction(float q, float encoderCenterAlpha, float encode
 	_qEncoder.learn(std::vector<float>(1, q), encoderCenterAlpha, encoderMaxDutyCycleForLearn, encoderNoMatchIntensity);
 }
 
-void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float outputBeta, float outputTemperature, float nodeEligibilityDecay, float columnConnectionAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float encoderAlpha, float encoderLocalActivity, float encoderOutputIntensity, float encoderDutyCycleDecay, float encoderMaxDutyCycleForLearn, float encoderNoMatchIntensity, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator) {
+void HTMRL::step(sys::ComputeSystem &cs, float reward, float cellStateDecay, float columnConnectionAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float encoderAlpha, float encoderLocalActivity, float encoderOutputIntensity, float encoderDutyCycleDecay, float encoderMaxDutyCycleForLearn, float encoderNoMatchIntensity, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator) {
 	std::uniform_int_distribution<int> seedDist(0, 10000);
 
 	unsigned long seed = seedDist(generator);
 
 	stepBegin();
 
-	activate(_input, cs, reward, alpha, gamma, columnConnectionAlpha, 0.0f, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, seed);
+	activate(_input, cs, reward, alpha, gamma, cellStateDecay, activationDutyCycleDecay, stateDutyCycleDecay, columnConnectionAlpha, 0.0f, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, seed);
 
 	getReconstructedPrediction(_input, cs);
 
@@ -1269,7 +1272,7 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float outputAlpha, float 
 	std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
 	std::normal_distribution<float> pertDist(0.0f, perturbationStdDev);
 
-	for (int i = 0; i < _output.size(); i++)
+	for (int i = 0; i < _input.size(); i++)
 	if (_inputTypes[i] == _action) {
 		if (dist01(generator) < breakChance)
 			_input[i] = dist01(generator);
@@ -1306,7 +1309,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		region[1] = _inputHeight;
 		region[2] = 1;
 
-		cs.getQueue().enqueueReadImage(_inputImage, CL_TRUE, origin, region, 0, 0, &state[0]);
+		cs.getQueue().enqueueReadImage(_reconstruction, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 		sf::Color c;
 		c.r = uniformDist(generator) * 255.0f;
