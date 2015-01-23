@@ -37,12 +37,17 @@ namespace htm {
 
 			float _noMatchTolerance;
 
-			int _numBlurPasses;
-			float _blurKernelWidthMuliplier;
+			int _numColumnStateBlurPasses;
+			float _columnStateBlurKernelWidthMultiplier;
+
+			int _numTdErrorBlurPasses;
+			float _tdErrorBlurKernelWidthMultiplier;
+
+			int _columnQRadius;
 
 			LayerDesc()
 				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(5), _lateralConnectionRadius(5), _inhibitionRadius(4), _dutyCycleRadius(5), _cellsInColumn(6),
-				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.1f), _noMatchTolerance(0.01f), _numBlurPasses(1), _blurKernelWidthMuliplier(0.25f)
+				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.1f), _noMatchTolerance(0.01f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(0.25f), _numTdErrorBlurPasses(1), _tdErrorBlurKernelWidthMultiplier(0.25f), _columnQRadius(6)
 			{}
 		};
 
@@ -106,9 +111,8 @@ namespace htm {
 		cl::Kernel _layerColumnWeightUpdateKernel;
 		cl::Kernel _layerColumnPredictionKernel;
 		cl::Kernel _layerColumnQKernel;
-		cl::Kernel _layerColumnTdErrorKernel;
+		cl::Kernel _layerTdErrorKernel;
 		cl::Kernel _layerAssignQKernel;
-		cl::Kernel _layerAssignQLastKernel;
 
 		// For blur
 		cl::Kernel _gaussianBlurXKernel;
@@ -156,8 +160,8 @@ namespace htm {
 		void predictLayer(sys::ComputeSystem &cs, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
 		void predictLayerLast(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
 		void determineLayerColumnQ(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc);
-		void assignLayerQ(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, Layer &nextLayer, LayerDesc &nextLayerDesc, float reward, float alpha, float gamma);
-		void assignLayerQLast(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, float reward, float alpha, float gamma);
+		void assignLayerQ(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, float alpha);
+		void determineLayerTdError(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, float reward, float gamma);
 		void learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, std::mt19937 &generator);
 		void learnLayerTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, std::mt19937 &generator);
 		void learnLayerTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, std::mt19937 &generator);

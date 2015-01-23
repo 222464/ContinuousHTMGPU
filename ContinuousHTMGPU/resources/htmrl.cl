@@ -35,7 +35,7 @@ constant float maxDutyCycleForLearnRatio = 0.3f;
 constant float maxBoost = 1.0f;
 constant float rectifierLeak = 0.03f;
 constant float cellNoise = 0.01f;
-constant float contributionSensitivity = 4.0f;
+constant float contributionSensitivity = 100.0f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -372,29 +372,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStatesPrev, read_onl
 	float columnState = read_imagef(columnStates, columnPosition).x;
 	float columnPredictionPrev = read_imagef(columnPredictionsPrev, columnPosition).x;
 	
-	// Gather tdError
-	float sum = 0.0f;
-	float divisor = 0.0f;
-	
-	for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
-	for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
-		int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
-		
-		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {
-			float tdError = read_imagef(columnTdErrors, connectionCoords).x;
-			float columnStatePrev = read_imagef(columnStatesPrev, connectionCoords).x;
-			
-			sum += tdError * columnStatePrev;
-			divisor += columnStatePrev;
-		}
-	}
-	
-	float tdError;
-	
-	if (divisor == 0.0f)
-		tdError = 0.0f;
-	else
-		tdError = sum / divisor;
+	float tdError = read_imagef(columnTdErrors, columnPosition).x;
 	
 	float learn = tdError > 0.0f ? 1.0f : 0.0f;
 	
@@ -483,29 +461,7 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStatesPrev, read
 	float columnState = read_imagef(columnStates, columnPosition).x;
 	float columnPredictionPrev = read_imagef(columnPredictionsPrev, columnPosition).x;
 	
-	// Gather tdError
-	float sum = 0.0f;
-	float divisor = 0.0f;
-	
-	for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
-	for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
-		int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
-		
-		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {
-			float tdError = read_imagef(columnTdErrors, connectionCoords).x;
-			float columnStatePrev = read_imagef(columnStatesPrev, connectionCoords).x;
-			
-			sum += tdError * columnStatePrev;
-			divisor += columnStatePrev;
-		}
-	}
-	
-	float tdError;
-	
-	if (divisor == 0.0f)
-		tdError = 0.0f;
-	else
-		tdError = sum / divisor;
+	float tdError = read_imagef(columnTdErrors, columnPosition).x;
 	
 	float learn = tdError > 0.0f ? 1.0f : 0.0f;
 	
@@ -690,20 +646,17 @@ void kernel layerColumnPrediction(read_only image3d_t cellPredictions, read_only
 	write_imagef(columnPredictions, columnPosition, (float4)(output, output, output, output));
 }
 
-void kernel layerAssignQ(read_only image3d_t cellStatesPrev, read_only image3d_t cellQValuesPrev, read_only image2d_t columnStates, read_only image2d_t columnDutyCyclesPrev, read_only image2d_t columnQValuesPrev, read_only image2d_t columnQValues, write_only image3d_t cellQValues, write_only image2d_t columnTdErrors,
-	int cellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float reward, float alpha, float gamma)
+void kernel layerTdError(read_only image3d_t cellStatesPrev, read_only image2d_t columnStatesPrev, read_only image2d_t columnStates, read_only image2d_t columnDutyCyclesPrev, read_only image2d_t columnQValuesPrev, read_only image2d_t columnQValues, write_only image2d_t columnTdErrors,
+	int cellsInColumn, int2 layerSize, int2 qConnectionsRadii, float reward, float gamma)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
-	//float2 normalizedColumnCoords = (float2)(columnPosition.x * layerSizeMinusOneInv.x, columnPosition.y * layerSizeMinusOneInv.y);
-	//int2 connectionCoordsNextCenter = (int2)(normalizedColumnCoords.x * nextLayerSizeMinusOne.x, normalizedColumnCoords.y * nextLayerSizeMinusOne.y);
-		
 	float qSum = 0.0f;
 	float divisor = 0.0f;
-
+	
 	// Go through all connections 
-	for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
-	for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
+	for (int dx = -qConnectionsRadii.x; dx <= qConnectionsRadii.x; dx++)
+	for (int dy = -qConnectionsRadii.y; dy <= qConnectionsRadii.y; dy++) {
 		int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
 			
 		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {	
@@ -716,90 +669,30 @@ void kernel layerAssignQ(read_only image3d_t cellStatesPrev, read_only image3d_t
 			
 			qSum += contribution * nextQ;
 			divisor += contribution;
-			
-			/*int2 connectionCoordsNext = (int2)(connectionCoordsNextCenter.x + dx, connectionCoordsNextCenter.y + dy);
-			
-			if (connectionCoordsNext.x >= 0 && connectionCoordsNext.x < nextLayerSize.x && connectionCoordsNext.y >= 0 && connectionCoordsNext.y < nextLayerSize.y) {
-				float nextQ = read_imagef(nextLayerColumnQValues, connectionCoordsNext).x;
-					
-				float sourceColumnState = read_imagef(columnStates, connectionCoords).x;
-				float sourceColumnDutyCyclePrev = read_imagef(columnDutyCyclesPrev, connectionCoords).x;
-				
-				float contribution = sourceColumnState * (1.0f - pow(sourceColumnDutyCyclePrev, contributionSensitivity));
-			
-				qSum += contribution * nextQ;
-				divisor += contribution;
-			}*/
 		}
 	}
-	
-	float prevColumnQ = read_imagef(columnQValues, columnPosition).x;
 		
-	float receivedQ;
+	float prevColumnQ = read_imagef(columnQValuesPrev, columnPosition).x;
+		
+	float columnState = read_imagef(columnStatesPrev, columnPosition).x;
+		
+	float tdError;
 
 	if (divisor == 0.0f)
-		receivedQ = prevColumnQ;
+		tdError = 0.0f;
 	else
-		receivedQ = qSum / divisor;
+		tdError = (reward + gamma * qSum / divisor - prevColumnQ) * columnState;
 		
-	float columnState = read_imagef(columnStates, columnPosition).x;
-		
-	float tdError = columnState * (reward + gamma * receivedQ - prevColumnQ);
-			
 	write_imagef(columnTdErrors, columnPosition, (float4)(tdError, 0.0f, 0.0f, 0.0f));
-			
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float qPrev = read_imagef(cellQValuesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		
-		float cellEligibility = read_imagef(cellStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
-		
-		float storeQ = qPrev + alpha * cellEligibility * tdError;
-		
-		write_imagef(cellQValues, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(storeQ, 0.0f, 0.0f, 0.0f));
-	}
 }
 
-void kernel layerAssignQLast(read_only image3d_t cellStatesPrev, read_only image3d_t cellQValuesPrev, read_only image2d_t columnStates, read_only image2d_t columnDutyCyclesPrev, read_only image2d_t columnQValuesPrev, read_only image2d_t columnQValues, write_only image3d_t cellQValues, write_only image2d_t columnTdErrors,
-	int cellsInColumn, int2 layerSize, int2 lateralConnectionsRadii, float reward, float alpha, float gamma)
+void kernel layerAssignQ(read_only image2d_t blurredColumnTdErrors, read_only image3d_t cellQValuesPrev, read_only image3d_t cellStatesPrev, write_only image3d_t cellQValues,
+	int cellsInColumn, float alpha)
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
-	float qSum = 0.0f;
-	float divisor = 0.0f;
+	float tdError = read_imagef(blurredColumnTdErrors, columnPosition).x;
 	
-	// Go through all connections 
-	for (int dx = -lateralConnectionsRadii.x; dx <= lateralConnectionsRadii.x; dx++)
-	for (int dy = -lateralConnectionsRadii.y; dy <= lateralConnectionsRadii.y; dy++) {
-		int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
-			
-		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {	
-			float nextQ = read_imagef(columnQValues, connectionCoords).x;
-				
-			float sourceColumnState = read_imagef(columnStates, connectionCoords).x;
-			float sourceColumnDutyCyclePrev = read_imagef(columnDutyCyclesPrev, connectionCoords).x;
-			
-			float contribution = sourceColumnState;// * (1.0f - pow(sourceColumnDutyCyclePrev, contributionSensitivity));
-			
-			qSum += contribution * nextQ;
-			divisor += contribution;
-		}
-	}
-		
-	float prevColumnQ = read_imagef(columnQValues, columnPosition).x;
-		
-	float receivedQ;
-
-	if (divisor == 0.0f)
-		receivedQ = prevColumnQ;
-	else
-		receivedQ = qSum / divisor;
-		
-	float columnState = read_imagef(columnStates, columnPosition).x;
-		
-	float tdError = columnState * (reward + gamma * receivedQ - prevColumnQ);
-			
-	write_imagef(columnTdErrors, columnPosition, (float4)(tdError, 0.0f, 0.0f, 0.0f));
-			
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float qPrev = read_imagef(cellQValuesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
@@ -816,7 +709,7 @@ void kernel layerColumnQ(read_only image3d_t cellQValues, read_only image3d_t ce
 	
 	float sum = 0.0f;
 	float divisor = 0.0f;
-	float maxQ = -999999.0f;
+	float unweightedSum = 0.0f;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float state = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
@@ -825,41 +718,17 @@ void kernel layerColumnQ(read_only image3d_t cellQValues, read_only image3d_t ce
 		sum += state * cellQ;
 		divisor += state;
 		
-		maxQ = fmax(maxQ, cellQ);
+		unweightedSum += cellQ;
 	}
 	
 	float output;
 	
 	if (divisor == 0.0f)
-		output = maxQ;
+		output = unweightedSum / cellsInColumn;
 	else
 		output = sum / divisor;
 
 	write_imagef(columnQValues, columnPosition, (float4)(output, output, output, output));
-}
-
-void kernel layerColumnTdError(read_only image2d_t columnStatesPrev, read_only image3d_t cellQValues, read_only image3d_t cellStatesPrev, write_only image2d_t columnTdErrors, int cellsInColumn) {
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
-	
-	float sum = 0.0f;
-	float divisor = 0.0f;
-
-	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float state = read_imagef(cellStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		float tdError = read_imagef(cellQValues, (int4)(columnPosition.x, columnPosition.y, ci, 0)).y;
-		
-		sum += state * tdError;
-		divisor += state;
-	}
-	
-	float output;
-	
-	if (divisor == 0.0f)
-		output = 0.0f;
-	else
-		output = sum / divisor;
-
-	write_imagef(columnTdErrors, columnPosition, (float4)(output, output, output, output));
 }
 
 void kernel reconstructInput(read_only image3d_t sdrCenters, read_only image2d_t sdr, write_only image2d_t inputs,
