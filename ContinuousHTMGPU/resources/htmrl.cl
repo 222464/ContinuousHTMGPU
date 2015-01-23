@@ -654,6 +654,9 @@ void kernel layerTdError(read_only image3d_t cellStatesPrev, read_only image2d_t
 	float qSum = 0.0f;
 	float divisor = 0.0f;
 	
+	float qSumPrev = 0.0f;
+	float divisorPrev = 0.0f;
+	
 	// Go through all connections 
 	for (int dx = -qConnectionsRadii.x; dx <= qConnectionsRadii.x; dx++)
 	for (int dy = -qConnectionsRadii.y; dy <= qConnectionsRadii.y; dy++) {
@@ -661,27 +664,26 @@ void kernel layerTdError(read_only image3d_t cellStatesPrev, read_only image2d_t
 			
 		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {	
 			float nextQ = read_imagef(columnQValues, connectionCoords).x;
-				
-			float sourceColumnState = read_imagef(columnStates, connectionCoords).x;
-			float sourceColumnDutyCyclePrev = read_imagef(columnDutyCyclesPrev, connectionCoords).x;
-			
-			float contribution = sourceColumnState;// * (1.0f - pow(sourceColumnDutyCyclePrev, contributionSensitivity));
+			float q = read_imagef(columnQValuesPrev, connectionCoords).x;
+
+			float contribution = read_imagef(columnStates, connectionCoords).x;
 			
 			qSum += contribution * nextQ;
 			divisor += contribution;
+			
+			float contributionPrev = read_imagef(columnStatesPrev, connectionCoords).x;
+			
+			qSumPrev += contributionPrev * q;
+			divisorPrev += contributionPrev;
 		}
 	}
 		
-	float prevColumnQ = read_imagef(columnQValuesPrev, columnPosition).x;
-		
-	float columnState = read_imagef(columnStatesPrev, columnPosition).x;
-		
 	float tdError;
 
-	if (divisor == 0.0f)
+	if (divisor == 0.0f || divisorPrev == 0.0f)
 		tdError = 0.0f;
 	else
-		tdError = (reward + gamma * qSum / divisor - prevColumnQ) * columnState;
+		tdError = reward + gamma * qSum / divisor - qSumPrev / divisorPrev;
 		
 	write_imagef(columnTdErrors, columnPosition, (float4)(tdError, 0.0f, 0.0f, 0.0f));
 }

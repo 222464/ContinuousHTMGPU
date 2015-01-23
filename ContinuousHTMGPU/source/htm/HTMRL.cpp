@@ -590,7 +590,7 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 		determineLayerTdError(cs, _layers[l], _layerDescs[l], reward, gamma);
 
 	for (int l = _layers.size() - 1; l >= 0; l--)
-		gaussianBlur(cs, _layers[l]._columnStates, _layers[l]._blurPing, _layers[l]._blurPong, _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._numTdErrorBlurPasses, _layerDescs[l]._tdErrorBlurKernelWidthMultiplier);
+		gaussianBlur(cs, _layers[l]._columnTdErrors, _layers[l]._blurPing, _layers[l]._blurPong, _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._numTdErrorBlurPasses, _layerDescs[l]._tdErrorBlurKernelWidthMultiplier);
 
 	for (int l = _layers.size() - 1; l >= 0; l--)
 		assignLayerQ(cs, _layers[l], _layerDescs[l], alpha);
@@ -1436,7 +1436,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 			region[1] = _layerDescs[l]._height;
 			region[2] = 1;
 
-			cs.getQueue().enqueueReadImage(_layers[l]._columnTdErrors, CL_TRUE, origin, region, 0, 0, &state[0]);
+			cs.getQueue().enqueueReadImage(_layers[l]._blurPong, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 			sf::Color c;
 			c.r = uniformDist(generator) * 255.0f;
