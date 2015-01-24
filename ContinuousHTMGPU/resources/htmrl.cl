@@ -706,27 +706,29 @@ void kernel layerAssignQ(read_only image2d_t blurredColumnTdErrors, read_only im
 	}
 }
 
-void kernel layerColumnQ(read_only image3d_t cellQValues, read_only image3d_t cellStates, write_only image2d_t columnQValues, int cellsInColumn) {
+void kernel layerColumnQ(read_only image3d_t cellQValuesPrev, read_only image3d_t cellStates, write_only image2d_t columnQValues, int cellsInColumn) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
 	float sum = 0.0f;
 	float divisor = 0.0f;
-	float unweightedSum = 0.0f;
+	float unweightedAverage = 0.0f;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
 		float state = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		float cellQ = read_imagef(cellQValues, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		float cellQ = read_imagef(cellQValuesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
 		sum += state * cellQ;
 		divisor += state;
 		
-		unweightedSum += cellQ;
+		unweightedAverage += cellQ;
 	}
+	
+	unweightedAverage /= cellsInColumn;
 	
 	float output;
 	
 	if (divisor == 0.0f)
-		output = unweightedSum / cellsInColumn;
+		output = unweightedAverage;
 	else
 		output = sum / divisor;
 
