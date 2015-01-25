@@ -47,7 +47,7 @@ namespace htm {
 
 			LayerDesc()
 				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(5), _lateralConnectionRadius(5), _inhibitionRadius(4), _dutyCycleRadius(5), _cellsInColumn(6),
-				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.1f), _noMatchTolerance(0.01f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(0.125f), _numTdErrorBlurPasses(2), _tdErrorBlurKernelWidthMultiplier(1.0f), _columnQRadius(6)
+				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.1f), _noMatchTolerance(0.2f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(0.125f), _numTdErrorBlurPasses(2), _tdErrorBlurKernelWidthMultiplier(1.0f), _columnQRadius(6)
 			{}
 		};
 
@@ -77,13 +77,13 @@ namespace htm {
 			cl::Image3D _cellStatesPrev;
 			cl::Image3D _cellStates;
 
-			// Contain both Q and tdError
 			cl::Image3D _cellQValuesPrev;
 			cl::Image3D _cellQValues;
 
-			// Contains just Q
-			cl::Image2D _columnQValuesPrev;
 			cl::Image2D _columnQValues;
+
+			cl::Image2D _columnPrevValues;
+			cl::Image2D _columnPrevValuesPrev;
 
 			// Contains just tdError
 			cl::Image2D _columnTdErrors;
@@ -161,7 +161,7 @@ namespace htm {
 		void predictLayerLast(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
 		void determineLayerColumnQ(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc);
 		void assignLayerQ(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, float alpha);
-		void determineLayerTdError(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, float reward, float gamma);
+		void determineLayerTdError(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, float reward, float alpha, float gamma);
 		void learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float columnConnectionAlpha, float widthAlpha, std::mt19937 &generator);
 		void learnLayerTemporal(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, std::mt19937 &generator);
 		void learnLayerTemporalLast(sys::ComputeSystem &cs, Layer &layer, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, const LayerDesc &layerDesc, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, std::mt19937 &generator);
@@ -181,9 +181,9 @@ namespace htm {
 		void learnQReconstruction(float q, float encoderCenterAlpha, float encoderMaxDutyCycleForLearn, float encoderNoMatchIntensity);
 
 	public:
-		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitEncoderCenter, float maxInitEncoderCenter, std::mt19937 &generator);
+		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, std::mt19937 &generator);
 	
-		void step(sys::ComputeSystem &cs, float reward, float cellStateDecay, float columnConnectionAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float encoderAlpha, float encoderLocalActivity, float encoderOutputIntensity, float encoderDutyCycleDecay, float encoderMaxDutyCycleForLearn, float encoderNoMatchIntensity, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator);
+		void step(sys::ComputeSystem &cs, float reward, float cellStateDecay, float columnConnectionAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator);
 
 		int getInputWidth() const {
 			return _inputWidth;
