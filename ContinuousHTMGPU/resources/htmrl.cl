@@ -690,9 +690,9 @@ void kernel layerTdError(read_only image3d_t cellStatesPrev, read_only image2d_t
 		
 		float prevValue = read_imagef(columnPrevValuesPrev, columnPosition).x;
 	
-		float2 columnState = read_imagef(columnStates, columnPosition).xy;
+		float2 columnState = read_imagef(columnStatesPrev, columnPosition).xy;
 			
-		float prevModulatedValue = (1.0f - columnState.y) * prevValue + columnState.y * keepQ;
+		float prevModulatedValue = columnState.y * prevValue + (1.0f - columnState.y) * keepQ;
 		
 		tdError = columnState.x * (alpha * (reward + gamma * keepQ - prevModulatedValue));
 	}
