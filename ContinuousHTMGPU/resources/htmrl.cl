@@ -20,14 +20,14 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 	
 constant float columnIntensity = 8.0f;
 constant float activationModulationPower = 1.5f;
-constant float qModulationPower = 1.5f;
+constant float qModulationPower = 2.0f;
 constant float crowdingIntensity = 4.0f;
 constant float cellStateIntensity = 64.0f;
 constant float cellPredictionIntensity = 4.0f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
-constant float localActivity = 2.0f;
-constant float crowdingActivity = 3.0f;
+constant float localActivity = 8.5f;
+constant float crowdingActivity = 2.0f;
 constant float uniquenessPower = 4.0f;
 constant float minOverlapForActivation = 0.0f;
 constant float subOverlapIncrement = 0.0005f;
@@ -209,8 +209,8 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, read_only 
 	
 	float learnFactor = noMatch * (thisDutyCycle <= fmin(maxDutyCycleForLearnRatio, minDutyCycle) ? 1.0f : 0.0f);
 	
-	float2 inhibitedResult = (float2)(fmax(0.0f, sigmoid((localActivity - higherSum.x) * columnIntensity) * 2.0f - 1.0f),
-		fmax(0.0f, sigmoid((localActivity - higherSum.y) * columnIntensity) * 2.0f - 1.0f));
+	float2 inhibitedResult = (float2)(fmax(0.0f, sigmoid(localActivity - higherSum.x * columnIntensity) * 2.0f - 1.0f),
+		fmax(0.0f, sigmoid(localActivity - higherSum.y * columnIntensity) * 2.0f - 1.0f));
 	
 	write_imagef(columnStates, columnPosition, (float4)(inhibitedResult.x, learnFactor, inhibitedResult.y, 0.0f));
 }
@@ -404,11 +404,11 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStatesPrev, read_onl
 			
 					float connectionState = read_imagef(cellStatesPrev, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
 					
-					float eligibility = cellError * connectionState;
+					float eligibility = connectionState;
 					
-					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + beta * (sign(cellWeightPrev.y) == sign(eligibility) ? exp(-temperature * fabs(cellWeightPrev.y)) : 1.0f) * eligibility;
+					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + beta * exp(-temperature * fabs(cellWeightPrev.y)) * eligibility;
 					
-					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * newTrace, newTrace);
+					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * cellError * newTrace, newTrace);
 					
 					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, 0.0f, 0.0f));
 					
@@ -425,11 +425,11 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStatesPrev, read_onl
 					
 					float2 cellWeightPrev = read_imagef(cellWeightsPrev, weightPosition).xy;
 
-					float eligibility = cellError * nextContextPrev;
+					float eligibility = nextContextPrev;
 					
-					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + beta * (sign(cellWeightPrev.y) == sign(eligibility) ? exp(-temperature * fabs(cellWeightPrev.y)) : 1.0f) * eligibility;
+					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + beta * exp(-temperature * fabs(cellWeightPrev.y)) * eligibility;
 					
-					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * newTrace, newTrace);
+					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * cellError * newTrace, newTrace);
 					
 					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, 0.0f, 0.0f));
 				}
@@ -493,11 +493,11 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStatesPrev, read
 			
 					float connectionState = read_imagef(cellStatesPrev, (int4)(connectionCoords.x, connectionCoords.y, cio, 0)).x;
 					
-					float eligibility = cellError * connectionState;
+					float eligibility = connectionState;
 					
-					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + beta * (sign(cellWeightPrev.y) == sign(eligibility) ? exp(-temperature * fabs(cellWeightPrev.y)) : 1.0f) * eligibility;
+					float newTrace = (1.0f - eligibilityDecay) * cellWeightPrev.y + beta * exp(-temperature * fabs(cellWeightPrev.y)) * eligibility;
 					
-					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * newTrace, newTrace);
+					float2 newCellWeight = (float2)(cellWeightPrev.x + alpha * cellError * newTrace, newTrace);
 					
 					write_imagef(cellWeights, weightPosition, (float4)(newCellWeight.x, newCellWeight.y, 0.0f, 0.0f));
 					

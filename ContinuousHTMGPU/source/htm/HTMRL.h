@@ -24,7 +24,6 @@ namespace htm {
 			int _width, _height;
 
 			int _receptiveFieldRadius;
-			int _nodeFieldRadius;
 			int _lateralConnectionRadius;
 			int _inhibitionRadius;
 			int _dutyCycleRadius; // Should be about 2 * _inhibitionRadius
@@ -32,8 +31,6 @@ namespace htm {
 			int _cellsInColumn;
 
 			float _qInfluenceMultiplier;
-
-			float _nodeAlpha;
 
 			float _noMatchTolerance;
 
@@ -46,8 +43,8 @@ namespace htm {
 			int _columnQRadius;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(5), _lateralConnectionRadius(5), _inhibitionRadius(4), _dutyCycleRadius(5), _cellsInColumn(6),
-				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.1f), _noMatchTolerance(0.2f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(0.125f), _numTdErrorBlurPasses(2), _tdErrorBlurKernelWidthMultiplier(1.0f), _columnQRadius(6)
+				: _width(16), _height(16), _receptiveFieldRadius(4), _lateralConnectionRadius(5), _inhibitionRadius(4), _dutyCycleRadius(5), _cellsInColumn(6),
+				_qInfluenceMultiplier(1.0f), _noMatchTolerance(0.2f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(0.125f), _numTdErrorBlurPasses(2), _tdErrorBlurKernelWidthMultiplier(1.0f), _columnQRadius(6)
 			{}
 		};
 
