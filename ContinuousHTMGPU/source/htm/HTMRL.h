@@ -17,7 +17,7 @@ namespace htm {
 	class HTMRL {
 	public:
 		enum InputType {
-			_state, _action, _q, _unused
+			_state, _action, _unused
 		};
 
 		struct LayerDesc {
@@ -48,6 +48,15 @@ namespace htm {
 			LayerDesc()
 				: _width(16), _height(16), _receptiveFieldRadius(4), _nodeFieldRadius(5), _lateralConnectionRadius(5), _inhibitionRadius(4), _dutyCycleRadius(5), _cellsInColumn(6),
 				_qInfluenceMultiplier(1.0f), _nodeAlpha(0.1f), _noMatchTolerance(0.2f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(0.125f), _numTdErrorBlurPasses(2), _tdErrorBlurKernelWidthMultiplier(1.0f), _columnQRadius(6)
+			{}
+		};
+
+		struct InputData {
+			float _exploratory;
+			float _maximum;
+
+			InputData()
+				: _exploratory(0.0f), _maximum(0.0f)
 			{}
 		};
 
@@ -121,7 +130,7 @@ namespace htm {
 		// For reconstruction
 		cl::Kernel _reconstructInputKernel;
 
-		std::vector<float> _input;
+		std::vector<InputData> _input;
 
 		std::vector<InputType> _inputTypes;
 
@@ -138,16 +147,13 @@ namespace htm {
 		float _prevQ;
 		float _prevTDError;
 
-		AnythingEncoder _qEncoder;
-		std::vector<int> _qIndices;
-
 		cl::Image2D _inputImage;
 
 		cl::Image2D _reconstruction;
 
 		void stepBegin();
 
-		void activate(std::vector<float> &input, sys::ComputeSystem &cs, float reward, float alpha, float gamma, float cellStateDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, unsigned long seed);
+		void activate(std::vector<InputData> &input, sys::ComputeSystem &cs, float reward, float alpha, float gamma, float cellStateDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, unsigned long seed);
 	
 		void learnSpatial(sys::ComputeSystem &cs, float columnConnectionAlpha, float widthAlpha, unsigned long seed);
 		
@@ -175,11 +181,6 @@ namespace htm {
 		// Blur
 		void gaussianBlur(sys::ComputeSystem &cs, cl::Image2D &source, cl::Image2D &ping, cl::Image2D &pong, int imageSizeX, int imageSizeY, int passes, float kernelWidth);
 
-		// Q
-		float reconstructQFromInput(const std::vector<float> &input);
-		void assignInputsFromQ(std::vector<float> &input, float q, float encoderLocalActivity, float encoderOutputIntensity, float encoderDutyCycleDecay);
-		void learnQReconstruction(float q, float encoderCenterAlpha, float encoderMaxDutyCycleForLearn, float encoderNoMatchIntensity);
-
 	public:
 		void createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, int inputWidth, int inputHeight, const std::vector<LayerDesc> &layerDescs, const std::vector<InputType> &inputTypes, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, std::mt19937 &generator);
 	
@@ -198,7 +199,7 @@ namespace htm {
 		}
 
 		void setInput(int i, float value) {
-			_input[i] = value;
+			_input[i]._exploratory = _input[i]._maximum = value;
 		}
 
 		void setInput(int x, int y, float value) {
@@ -206,7 +207,7 @@ namespace htm {
 		}
 
 		float getOutput(int i) const {
-			return _input[i];
+			return _input[i]._exploratory;
 		}
 
 		float getOutput(int x, int y) const {

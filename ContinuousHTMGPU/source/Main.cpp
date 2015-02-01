@@ -179,13 +179,6 @@ int main() {
 
 	std::vector<int> actionIndices;
 
-	for (int i = 0; i < 64; i++) {
-		int x = actionXDist(generator);
-		int y = actionYDist(generator);
-
-		inputTypes[x + y * 64] = htm::HTMRL::_q;
-	}
-
 	for (int i = 0; i < 8; i++) {
 		int x = actionXDist(generator);
 		int y = actionYDist(generator);
@@ -263,7 +256,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.01f, 0.8f, 0.5f, 0.5f, 2.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.7f, 0.992f, 0.0f, 0.1f, 0.2f, 10.0f, generator);
+		agent.step(cs, reward, 0.01f, 0.8f, 0.2f, 0.2f, 4.0f, 0.01f, 0.01f, 0.01f, 0.1f, 0.7f, 0.992f, 0.0f, 0.1f, 0.2f, 10.0f, generator);
 
 		float output = 0.0f;
 		int c = 0;

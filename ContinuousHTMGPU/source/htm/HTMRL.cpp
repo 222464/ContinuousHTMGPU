@@ -31,7 +31,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	cl::Kernel initPartTwoKernel = cl::Kernel(program.getProgram(), "initializePartTwo");
 	
 	_input.clear();
-	_input.assign(_inputWidth * _inputHeight, 0.0f);
+	_input.resize(_inputWidth * _inputHeight);
 
 	_output.clear();
 	_output.assign(_inputWidth * _inputHeight, 0.0f);
@@ -56,7 +56,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	if (_inputTypes[i] == _action) {
 		float value = actionDist(generator);
 
-		_input[i] = value;
+		_input[i]._exploratory = _input[i]._maximum = value;
 
 		_exploratoryOutput[i] = value;
 
@@ -66,12 +66,8 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 
 		_prevInput[i] = value;
 	}
-	else if (_inputTypes[i] == _q)
-		_qIndices.push_back(i);
 
-	_qEncoder.create(_qIndices.size(), 1, minInitCenter, maxInitCenter, generator);
-
-	_inputImage = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), _inputWidth, _inputHeight);
+	_inputImage = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), _inputWidth, _inputHeight);
 
 	int prevWidth = _inputWidth;
 	int prevHeight = _inputHeight;
@@ -128,10 +124,10 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 	else
 		lateralConnectionsSize = std::pow(layerDesc._lateralConnectionRadius * 2 + 1, 2) * (layerDesc._cellsInColumn + 1) + 1; // + 1 for bias
 
-	layer._columnActivations = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
+	layer._columnActivations = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height);
 	
-	layer._columnStates = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height);
-	layer._columnStatesPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height);
+	layer._columnStates = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RGBA, CL_FLOAT), layerDesc._width, layerDesc._height);
+	layer._columnStatesPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RGBA, CL_FLOAT), layerDesc._width, layerDesc._height);
 
 	layer._columnWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, receptiveFieldSize + 1); // + 1 for width
 	layer._columnWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, receptiveFieldSize + 1); // + 1 for width
@@ -139,8 +135,8 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 	layer._columnDutyCycles = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height);
 	layer._columnDutyCyclesPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height);
 
-	layer._cellStates = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
-	layer._cellStatesPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
+	layer._cellStates = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RGBA, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
+	layer._cellStatesPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RGBA, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
 
 	layer._cellQValues = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
 	layer._cellQValuesPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
@@ -545,7 +541,7 @@ void HTMRL::predictLayerLast(sys::ComputeSystem &cs, Layer &layer, const LayerDe
 	cs.getQueue().flush();
 }
 
-void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float reward, float alpha, float gamma, float cellStateDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, unsigned long seed) {
+void HTMRL::activate(std::vector<InputData> &input, sys::ComputeSystem &cs, float reward, float alpha, float gamma, float cellStateDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float columnConnectionAlpha, float widthAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, unsigned long seed) {
 	// Create buffer from input
 	{
 		cl::size_t<3> origin;
@@ -1211,25 +1207,6 @@ void HTMRL::getReconstructedPrevPrediction(std::vector<float> &prediction, sys::
 	}
 }
 
-float HTMRL::reconstructQFromInput(const std::vector<float> &input) {
-	std::vector<float> recon;
-	_qEncoder.decode(input, recon);
-
-	return recon[0];
-}
-
-void HTMRL::assignInputsFromQ(std::vector<float> &input, float q, float encoderLocalActivity, float encoderOutputIntensity, float encoderDutyCycleDecay) {
-	std::vector<float> sdr;
-	_qEncoder.encode(std::vector<float>(1, q), sdr, encoderLocalActivity, encoderOutputIntensity, encoderDutyCycleDecay);
-
-	for (int i = 0; i < _qIndices.size(); i++)
-		input[_qIndices[i]] = sdr[i];
-}
-
-void HTMRL::learnQReconstruction(float q, float encoderCenterAlpha, float encoderMaxDutyCycleForLearn, float encoderNoMatchIntensity) {
-	_qEncoder.learn(std::vector<float>(1, q), encoderCenterAlpha, encoderMaxDutyCycleForLearn, encoderNoMatchIntensity);
-}
-
 void HTMRL::step(sys::ComputeSystem &cs, float reward, float cellStateDecay, float columnConnectionAlpha, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, float activationDutyCycleDecay, float stateDutyCycleDecay, float reconstructionAlpha, float alpha, float gamma, float tauInv, float breakChance, float perturbationStdDev, float maxTdError, std::mt19937 &generator) {
 	std::uniform_int_distribution<int> seedDist(0, 10000);
 
@@ -1239,7 +1216,9 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float cellStateDecay, flo
 
 	activate(_input, cs, reward, alpha, gamma, cellStateDecay, activationDutyCycleDecay, stateDutyCycleDecay, columnConnectionAlpha, 0.0f, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, seed);
 
-	getReconstructedPrediction(_input, cs);
+	std::vector<float> output;
+
+	getReconstructedPrediction(output, cs);
 
 	// Exploratory action
 	std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
@@ -1248,12 +1227,14 @@ void HTMRL::step(sys::ComputeSystem &cs, float reward, float cellStateDecay, flo
 	for (int i = 0; i < _input.size(); i++)
 	if (_inputTypes[i] == _action) {
 		if (dist01(generator) < breakChance)
-			_input[i] = dist01(generator);
+			_input[i]._exploratory = dist01(generator);
 		else
-			_input[i] = std::min<float>(1.0f, std::max<float>(0.0f, std::min<float>(1.0f, std::max<float>(0.0f, _input[i])) + pertDist(generator)));
+			_input[i]._exploratory = std::min<float>(1.0f, std::max<float>(0.0f, std::min<float>(1.0f, std::max<float>(0.0f, output[i])) + pertDist(generator)));
+	
+		_input[i]._maximum = output[i];
 	}
 	else if (_inputTypes[i] == _unused)
-		_input[i] = 0.0f;
+		_input[i]._exploratory = _input[i]._maximum = 0.0f;
 }
 
 void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<sf::Image>> &images, unsigned long seed) const {
