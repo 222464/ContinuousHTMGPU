@@ -150,8 +150,8 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 	layer._cellPredictions = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
 	layer._cellPredictionsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height, layerDesc._cellsInColumn);
 
-	layer._cellWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height * layerDesc._cellsInColumn, lateralConnectionsSize);
-	layer._cellWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height * layerDesc._cellsInColumn, lateralConnectionsSize);
+	layer._cellWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height * layerDesc._cellsInColumn, lateralConnectionsSize);
+	layer._cellWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height * layerDesc._cellsInColumn, lateralConnectionsSize);
 
 	layer._columnPredictions = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
 	layer._columnPredictionsPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
@@ -1361,8 +1361,8 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		}
 	}
 	else {
-		/*for (int l = 0; l < _layers.size(); l++) {
-			std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn * 2);
+		for (int l = 0; l < 1; l++) {
+			std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn * 4);
 
 			cl::size_t<3> origin;
 			origin[0] = 0;
@@ -1374,7 +1374,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 			region[1] = _layerDescs[l]._height;
 			region[2] = _layerDescs[l]._cellsInColumn;
 
-			cs.getQueue().enqueueReadImage(_layers[l]._cellQValues, CL_TRUE, origin, region, 0, 0, &state[0]);
+			cs.getQueue().enqueueReadImage(_layers[l]._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 			sf::Color c;
 			c.r = uniformDist(generator) * 255.0f;
@@ -1391,9 +1391,14 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 				for (int y = 0; y < _layerDescs[l]._height; y++) {
 					sf::Color color;
 
-					color = c;
+					//color = c;
 
-					color.a = std::min<float>(1.0f, std::max<float>(0.0f, std::max<float>(0.0f, state[1 + 2 * (x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width *_layerDescs[l]._height)]))) * (255.0f - 3.0f) + 3;
+					color.r = std::min<float>(1.0f, std::max<float>(0.0f, std::max<float>(0.0f, state[0 + 4 * (x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width *_layerDescs[l]._height)]))) * (255.0f - 3.0f) + 3;
+
+					color.g = std::min<float>(1.0f, std::max<float>(0.0f, std::max<float>(0.0f, state[2 + 4 * (x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width *_layerDescs[l]._height)]))) * (255.0f - 3.0f) + 3;
+
+					color.b = 0;
+					color.a = 0.5f * (color.r + color.g);
 
 					int wx = x - _layerDescs[l]._width / 2 + maxWidth / 2;
 					int wy = y - _layerDescs[l]._height / 2 + maxHeight / 2;
@@ -1405,9 +1410,9 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 
 				images.push_back(image);
 			}
-		}*/
+		}
 
-		for (int l = 0; l < _layers.size(); l++) {
+		/*for (int l = 0; l < _layers.size(); l++) {
 			std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height);
 
 			cl::size_t<3> origin;
@@ -1449,6 +1454,6 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 			}
 
 			images.push_back(image);
-		}
+		}*/
 	}
 }
