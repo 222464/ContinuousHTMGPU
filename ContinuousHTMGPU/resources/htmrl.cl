@@ -19,14 +19,14 @@ constant sampler_t defaultUnnormalizedSampler = CLK_NORMALIZED_COORDS_FALSE |
 	CLK_FILTER_NEAREST;
 	
 constant float columnIntensity = 8.0f;
-constant float activationModulationPower = 1.5f;
-constant float qModulationPower = 2.0f;
+constant float activationModulationPower = 2.0f;
+constant float qModulationPower = 1.0f;
 constant float crowdingIntensity = 4.0f;
 constant float cellStateIntensity = 64.0f;
 constant float cellPredictionIntensity = 4.0f;
 constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
-constant float localActivity = 8.5f;
+constant float localActivity = 6.5f;
 constant float crowdingActivity = 2.0f;
 constant float uniquenessPower = 4.0f;
 constant float minOverlapForActivation = 0.0f;
@@ -37,7 +37,8 @@ constant float maxBoost = 1.0f;
 constant float rectifierLeak = 0.03f;
 constant float cellNoise = 0.01f;
 constant float contributionSensitivity = 100.0f;
-constant float minDivisor = 0.001f;
+constant float minDivisor = 0.0001f;
+constant float trickleLearn = 0.1f;
 
 float randFloat(uint2* state) {
     const float invMaxInt = 1.0f / 4294967296.0f;
@@ -270,7 +271,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 	
 	float boost = thisState.z * dutyCyclePrev.y;
 	
-	float learnScalar = (1.0f - boost) * fmax(0.0f, thisState.x - thisStatePrev.x) + boost;// * ((1.0f - boost) * thisState.x + boost - thisActivation.x);
+	float learnScalar = (1.0f - boost) * thisState.x * trickleLearn + boost;// * ((1.0f - boost) * thisState.x + boost - thisActivation.x);
 	
 	// Adjust weights by their source activations and error
 	int weightIndex = 0;
@@ -283,8 +284,6 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 			float inputState = read_imagef(columnStatesInput, inputPosition).x;
 				
 			float prevWeight = read_imagef(columnWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
-				
-			//float modulation = (float)(abs(dx) + abs(dy)) / (inputReceptiveFieldRadius.x + inputReceptiveFieldRadius.y);
 				
 			float newWeight = prevWeight + connectionAlpha * learnScalar * (inputState - prevWeight);
 				
@@ -304,9 +303,9 @@ void kernel layerColumnWeightUpdate(read_only image2d_t columnStatesInput, read_
 void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3d_t cellStatesPrev, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev,
 	write_only image3d_t cellStates, int cellsInColumn, int2 lateralConnectionsRadii, float cellTraceDecay, uint2 seed)
 {
-	/*int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
+	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
-	float2 columnState = read_imagef(columnStates, columnPosition).xz;
+	float2 columnState = read_imagef(columnStates, columnPosition).xy;
 	
 	float2 minPredictionError = (float2)(1.0f, 1.0f);
 	
@@ -330,9 +329,9 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 		float newTrace = fmax((1.0f - cellTraceDecay) * prevTrace, newCellState.x);
 	
 		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellState.x, newTrace, newCellState.y, 0.0f));
-	}*/
+	}
 	
-	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
+	/*int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
 	float2 columnState = read_imagef(columnStates, columnPosition).xy;
 	
@@ -361,7 +360,7 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 		float newTrace = fmax((1.0f - cellTraceDecay) * prevTrace, newCellState.x);
 	
 		write_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(newCellState.x, newTrace, newCellState.y, 0.0f));
-	}
+	}*/
 }
 
 void kernel layerCellWeightUpdate(read_only image2d_t columnStatesPrev, read_only image2d_t columnStates, read_only image3d_t cellPredictionsPrev, read_only image3d_t cellStates, read_only image3d_t cellStatesPrev, read_only image2d_t nextLayerContextPrev, read_only image3d_t cellWeightsPrev, read_only image2d_t columnPredictionsPrev, read_only image2d_t columnTdErrors,
@@ -646,8 +645,11 @@ void kernel layerTdError(read_only image3d_t cellStatesPrev, read_only image2d_t
 {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
-	float qSum = 0.0f;
-	float divisor = 0.0f;
+	float qSumValue = 0.0f;
+	float divisorValue = 0.0f;
+	
+	float qSumMax = 0.0f;
+	float divisorMax = 0.0f;
 	
 	// Go through all connections 
 	for (int dx = -qConnectionsRadii.x; dx <= qConnectionsRadii.x; dx++)
@@ -655,40 +657,35 @@ void kernel layerTdError(read_only image3d_t cellStatesPrev, read_only image2d_t
 		int2 connectionCoords = (int2)(columnPosition.x + dx, columnPosition.y + dy);
 			
 		if (connectionCoords.x >= 0 && connectionCoords.x < layerSize.x && connectionCoords.y >= 0 && connectionCoords.y < layerSize.y) {	
-			float q = read_imagef(columnQValues, connectionCoords).x;
+			float2 q = read_imagef(columnQValues, connectionCoords).xy;
 		
 			float modulation = pow(1.0f - (float)(abs(dx) + abs(dy)) / (float)(qConnectionsRadii.x + qConnectionsRadii.y), qModulationPower);
 			
 			// Ignore columns that will get reassigned
-			float2 columnState = read_imagef(columnStates, connectionCoords).xz;
+			float2 columnState = read_imagef(columnStates, connectionCoords).xy;
 		
-			float contribution = modulation * (1.0f - columnState.y) * columnState.x;
+			float contributionValue = modulation * columnState.x;
+			float contributionMax = modulation * columnState.y;
 			
-			qSum += contribution * q;
-			divisor += contribution;
+			qSumValue += contributionValue * q.x;
+			divisorValue += contributionValue;
+			
+			qSumMax += contributionMax * q.y;
+			divisorMax += contributionMax;
 		}
 	}
 		
-	float tdError;
-	float keepQ;
+	float keepQ = qSumValue / fmax(minDivisor, divisorValue);
+		
+	float maxQ = qSumMax / fmax(minDivisor, divisorMax);
+	
+	float prevValue = read_imagef(columnPrevValuesPrev, columnPosition).x;
 
-	//float columnLearn = read_imagef(columnStatesPrev, columnPosition).y;
-	
-	if (divisor < minDivisor) {
-		tdError = 0.0f;
-		keepQ = 0.0f;
-	}
-	else {
-		keepQ = qSum / divisor;
+	float2 columnState = read_imagef(columnStatesPrev, columnPosition).xy;
 		
-		float prevValue = read_imagef(columnPrevValuesPrev, columnPosition).x;
+	//float prevModulatedValue = columnState.y * prevValue + (1.0f - columnState.y) * keepQ;
 	
-		float2 columnState = read_imagef(columnStatesPrev, columnPosition).xz;
-			
-		float prevModulatedValue = columnState.y * prevValue + (1.0f - columnState.y) * keepQ;
-		
-		tdError = columnState.x * (alpha * (reward + gamma * keepQ - prevModulatedValue));
-	}
+	float tdError = alpha * (reward + gamma * maxQ - prevValue);
 		
 	write_imagef(columnTdErrors, columnPosition, (float4)(tdError, 0.0f, 0.0f, 0.0f));
 	write_imagef(columnPrevValues, columnPosition, (float4)(keepQ, 0.0f, 0.0f, 0.0f));
@@ -715,30 +712,20 @@ void kernel layerAssignQ(read_only image2d_t blurredColumnTdErrors, read_only im
 void kernel layerColumnQ(read_only image3d_t cellQValuesPrev, read_only image3d_t cellStatesPrev, read_only image3d_t cellStates, write_only image2d_t columnQValues, int cellsInColumn) {
 	int2 columnPosition = (int2)(get_global_id(0), get_global_id(1));
 	
-	float sum = 0.0f;
-	float divisor = 0.0f;
-	float unweightedAverage = 0.0f;
-	
+	float2 sum = (float2)(0.0f, 0.0f);
+	float2 divisor = (float2)(0.0f, 0.0f);
+
 	for (int ci = 0; ci < cellsInColumn; ci++) {
-		float state = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		float2 state = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xz;
 		float cellQ = read_imagef(cellQValuesPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
 		
 		sum += state * cellQ;
 		divisor += state;
-		
-		unweightedAverage += cellQ;
 	}
 	
-	unweightedAverage /= cellsInColumn;
-	
-	float output;
-	
-	if (divisor < minDivisor)
-		output = unweightedAverage;
-	else
-		output = sum / divisor;
+	float2 output = (float2)(sum.x / fmax(minDivisor, divisor.x), sum.y / fmax(minDivisor, divisor.y));
 		
-	write_imagef(columnQValues, columnPosition, (float4)(output, 0.0f, 0.0f, 0.0f));
+	write_imagef(columnQValues, columnPosition, (float4)(output.x, output.y, 0.0f, 0.0f));
 }
 
 void kernel reconstructInput(read_only image3d_t sdrCenters, read_only image2d_t sdr, write_only image2d_t inputs,
@@ -773,7 +760,7 @@ void kernel reconstructInput(read_only image3d_t sdrCenters, read_only image2d_t
 
 				float weight = read_imagef(sdrCenters, (int4)(sdrPosition.x, sdrPosition.y, weightIndex, 0)).x;
 				
-				float modulation = pow((float)(abs(rdx) + abs(rdy)) / (float)(sdrReceptiveFieldRadius.x + sdrReceptiveFieldRadius.y), activationModulationPower);
+				float modulation = pow(1.0f - (float)(abs(rdx) + abs(rdy)) / (float)(sdrReceptiveFieldRadius.x + sdrReceptiveFieldRadius.y), activationModulationPower);
 				
 				sum += modulation * source * weight;
 				divisor += modulation * source;
@@ -795,36 +782,36 @@ void kernel gaussianBlurX(read_only image2d_t source, write_only image2d_t desti
 	int2 destinationPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 destinationPositionNormalized = (float2)(destinationPosition.x * sizeInv.x, destinationPosition.y * sizeInv.y);
 	
-	float sum = 0.0f;
+	float4 sum = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
 	
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x - 4.0f * kernelWidth, destinationPositionNormalized.y)).x * 0.05f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x - 3.0f * kernelWidth, destinationPositionNormalized.y)).x * 0.09f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x - 2.0f * kernelWidth, destinationPositionNormalized.y)).x * 0.12f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x - kernelWidth, destinationPositionNormalized.y)).x * 0.15f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y)).x * 0.16f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x + kernelWidth, destinationPositionNormalized.y)).x * 0.15f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x + 2.0f * kernelWidth, destinationPositionNormalized.y)).x * 0.12f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x + 3.0f * kernelWidth, destinationPositionNormalized.y)).x * 0.09f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x + 4.0f * kernelWidth, destinationPositionNormalized.y)).x * 0.05f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x - 4.0f * kernelWidth, destinationPositionNormalized.y)) * 0.05f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x - 3.0f * kernelWidth, destinationPositionNormalized.y)) * 0.09f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x - 2.0f * kernelWidth, destinationPositionNormalized.y)) * 0.12f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x - kernelWidth, destinationPositionNormalized.y)) * 0.15f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y)) * 0.16f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x + kernelWidth, destinationPositionNormalized.y)) * 0.15f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x + 2.0f * kernelWidth, destinationPositionNormalized.y)) * 0.12f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x + 3.0f * kernelWidth, destinationPositionNormalized.y)) * 0.09f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x + 4.0f * kernelWidth, destinationPositionNormalized.y)) * 0.05f;
  
-	write_imagef(destination, destinationPosition, (float4)(sum, sum, sum, sum));
+	write_imagef(destination, destinationPosition, sum);
 }
 
 void kernel gaussianBlurY(read_only image2d_t source, write_only image2d_t destination, float2 sizeInv, float kernelWidth) {
 	int2 destinationPosition = (int2)(get_global_id(0), get_global_id(1));
 	float2 destinationPositionNormalized = (float2)(destinationPosition.x * sizeInv.x, destinationPosition.y * sizeInv.y);
 	
-	float sum = 0.0f;
+	float4 sum = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
 	
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y - 4.0f * kernelWidth)).x * 0.05f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y - 3.0f * kernelWidth)).x * 0.09f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y - 2.0f * kernelWidth)).x * 0.12f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y - kernelWidth)).x * 0.15f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y)).x * 0.16f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y + kernelWidth)).x * 0.15f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y + 2.0f * kernelWidth)).x * 0.12f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y + 3.0f * kernelWidth)).x * 0.09f;
-	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y + 4.0f * kernelWidth)).x * 0.05f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y - 4.0f * kernelWidth)) * 0.05f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y - 3.0f * kernelWidth)) * 0.09f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y - 2.0f * kernelWidth)) * 0.12f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y - kernelWidth)) * 0.15f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y)) * 0.16f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y + kernelWidth)) * 0.15f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y + 2.0f * kernelWidth)) * 0.12f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y + 3.0f * kernelWidth)) * 0.09f;
+	sum += read_imagef(source, defaultNormalizedSampler, (float2)(destinationPositionNormalized.x, destinationPositionNormalized.y + 4.0f * kernelWidth)) * 0.05f;
  
-	write_imagef(destination, destinationPosition, (float4)(sum, sum, sum, sum));
+	write_imagef(destination, destinationPosition, sum);
 }

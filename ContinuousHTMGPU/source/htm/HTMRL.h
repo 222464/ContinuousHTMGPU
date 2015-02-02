@@ -43,8 +43,8 @@ namespace htm {
 			int _columnQRadius;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(4), _lateralConnectionRadius(5), _inhibitionRadius(4), _dutyCycleRadius(5), _cellsInColumn(6),
-				_qInfluenceMultiplier(1.0f), _noMatchTolerance(0.2f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(0.125f), _numTdErrorBlurPasses(2), _tdErrorBlurKernelWidthMultiplier(1.0f), _columnQRadius(6)
+				: _width(16), _height(16), _receptiveFieldRadius(4), _lateralConnectionRadius(4), _inhibitionRadius(3), _dutyCycleRadius(4), _cellsInColumn(5),
+				_qInfluenceMultiplier(1.0f), _noMatchTolerance(0.2f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(0.125f), _numTdErrorBlurPasses(4), _tdErrorBlurKernelWidthMultiplier(1.0f), _columnQRadius(5)
 			{}
 		};
 
