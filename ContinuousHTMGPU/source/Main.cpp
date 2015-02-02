@@ -139,23 +139,23 @@ int main() {
 
 	layerDescs[0]._width = 64;
 	layerDescs[0]._height = 64;
-	layerDescs[0]._inhibitionRadius = 3;
-	layerDescs[0]._noMatchTolerance = 0.2f;
+	layerDescs[0]._inhibitionRadius = 5;
+	layerDescs[0]._noMatchTolerance = 0.001f;
 
 	layerDescs[1]._width = 44;
 	layerDescs[1]._height = 44;
-	layerDescs[1]._inhibitionRadius = 3;
-	layerDescs[1]._noMatchTolerance = 0.2f;
+	layerDescs[1]._inhibitionRadius = 5;
+	layerDescs[1]._noMatchTolerance = 0.001f;
 
 	layerDescs[2]._width = 32;
 	layerDescs[2]._height = 32;
-	layerDescs[2]._inhibitionRadius = 3;
-	layerDescs[2]._noMatchTolerance = 0.2f;
+	layerDescs[2]._inhibitionRadius = 5;
+	layerDescs[2]._noMatchTolerance = 0.001f;
 
 	layerDescs[3]._width = 20;
 	layerDescs[3]._height = 20;
-	layerDescs[3]._inhibitionRadius = 3;
-	layerDescs[3]._noMatchTolerance = 0.2f;
+	layerDescs[3]._inhibitionRadius = 5;
+	layerDescs[3]._noMatchTolerance = 0.001f;
 
 	std::vector<htm::HTMRL::InputType> inputTypes(64 * 64, htm::HTMRL::_state);
 
@@ -233,7 +233,7 @@ int main() {
 
 		//reward = dFitness * 5.0f;
 
-		reward = fitness;
+		reward = dFitness;
 
 		if (totalTime == 0.0f)
 			avgReward = reward;
@@ -247,7 +247,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.01f, 0.8f, 5.0f, 0.2f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.1f, 0.992f, 0.0f, 0.1f, 0.2f, 10.0f, generator);
+		agent.step(cs, reward, 0.01f, 0.8f, 0.5f, 0.2f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.7f, 0.994f, 0.0f, 0.1f, 0.2f, 10.0f, generator);
 
 		float output = 0.0f;
 		int c = 0;
