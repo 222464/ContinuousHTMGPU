@@ -596,7 +596,7 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 
 	float value = retreiveQ(cs);
 
-	float tdError = reward;// reward + gamma * value - _prevValue;
+	float tdError = reward + gamma * value - _prevValue;
 
 	std::cout << "R: " << reward << "Q: " << reward + gamma * value << " T: " << tdError << std::endl;
 
