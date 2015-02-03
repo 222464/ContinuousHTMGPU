@@ -1,4 +1,4 @@
-#include <htm/AnythingEncoder.h>
+#include "AnythingEncoder.h"
 
 using namespace htm;
 

@@ -4,6 +4,7 @@
 #include <SFML/Graphics.hpp>
 
 #include <vis/HTMRLVisualizer.h>
+#include <vis/Plot.h>
 
 #include <time.h>
 #include <iostream>
@@ -183,6 +184,28 @@ int main() {
 	vis::HTMRLVisualizer visualizer;
 	visualizer.create(1024);
 
+	vis::Plot plot;
+
+	plot._curves.resize(1);
+	
+	for (int i = 0; i < 100; i++) {
+		vis::Point p;
+		p._position.x = i;
+		p._position.y = std::sin(i * 0.05f);
+		p._color = sf::Color(255 * (std::sin(i * 0.5f) * 0.5f + 0.5f), 255 * (std::cos(i * 0.5f) * 0.5f + 0.5f), 255, 255);
+
+		plot._curves[0]._points.push_back(p);
+	}
+
+	sf::RenderTexture plotRT;
+	plotRT.create(800, 600, false);
+
+	sf::Texture lineGradient;
+	lineGradient.loadFromFile("resources/lineGradient.png");
+
+	sf::Font tickFont;
+	tickFont.loadFromFile("resources/arial.ttf");
+
 	do {
 		clock.restart();
 
@@ -361,9 +384,16 @@ int main() {
 			htmRT.setActive();
 			htmRT.clear(sf::Color::White);
 
-			visualizer.update(htmRT, sf::Vector2f(512.0f, 512.0f), sf::Vector2f(1.95f, 1.95f), cs, agent, generator);
+			//visualizer.update(htmRT, sf::Vector2f(512.0f, 512.0f), sf::Vector2f(1.95f, 1.95f), cs, agent, generator);
 
 			htmRT.display();
+
+			plotRT.setActive();
+			plotRT.clear(sf::Color::White);
+
+			plot.draw(plotRT, lineGradient, tickFont, 0.5f, sf::Vector2f(0.0f, 100.0f), sf::Vector2f(-2.0f, 2.0f), sf::Vector2f(64.0f, 64.0f), sf::Vector2f(10.0f, 0.5f), 2.0f, 8.0f, 2.0f, 6.0f, 2.0f, 2);
+
+			plotRT.display();
 
 			sf::Sprite htmSprite;
 			htmSprite.setTexture(htmRT.getTexture());
@@ -373,6 +403,11 @@ int main() {
 			htmSprite.setPosition(400.0f, 300.0f);
 
 			window.draw(htmSprite);
+
+			sf::Sprite plotSprite;
+			plotSprite.setTexture(plotRT.getTexture());
+
+			window.draw(plotSprite);
 		}
 
 		// -------------------------------------------------------------------

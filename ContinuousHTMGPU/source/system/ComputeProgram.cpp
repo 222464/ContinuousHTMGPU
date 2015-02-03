@@ -1,4 +1,4 @@
-#include <system/ComputeProgram.h>
+#include "ComputeProgram.h"
 
 #include <fstream>
 #include <iostream>
