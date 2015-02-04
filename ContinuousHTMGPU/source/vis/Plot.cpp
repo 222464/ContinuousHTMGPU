@@ -15,6 +15,9 @@ void Plot::draw(sf::RenderTarget &target, const sf::Texture &lineGradientTexture
 
 	// Draw curves
 	for (int c = 0; c < _curves.size(); c++) {
+		if (_curves[c]._points.empty())
+			continue;
+
 		sf::VertexArray vertexArray;
 
 		vertexArray.resize((_curves[c]._points.size() - 1) * 6);
@@ -55,10 +58,10 @@ void Plot::draw(sf::RenderTarget &target, const sf::Texture &lineGradientTexture
 
 					sf::Vector2f averageDirection = (renderDirection + vectorNormalize(renderPoint - renderPointPrev)) * 0.5f;
 					
-					sizeOffset = vectorNormalize(sf::Vector2f(-averageDirection.y, averageDirection.x)) * lineSize * 0.5f;
+					sizeOffset = vectorNormalize(sf::Vector2f(-averageDirection.y, averageDirection.x));
 				}
 				else
-					sizeOffset = vectorNormalize(sf::Vector2f(-renderDirection.y, renderDirection.x)) * lineSize * 0.5f;
+					sizeOffset = vectorNormalize(sf::Vector2f(-renderDirection.y, renderDirection.x));
 
 				if (p < _curves[c]._points.size() - 2) {
 					sf::Vector2f renderPointNextNext = sf::Vector2f(origin.x + (_curves[c]._points[p + 2]._position.x - domain.x) / (domain.y - domain.x) * plotSize.x,
@@ -66,10 +69,15 @@ void Plot::draw(sf::RenderTarget &target, const sf::Texture &lineGradientTexture
 
 					sf::Vector2f averageDirection = (renderDirection + vectorNormalize(renderPointNextNext - renderPointNext)) * 0.5f;
 
-					sizeOffsetNext = vectorNormalize(sf::Vector2f(-averageDirection.y, averageDirection.x)) * lineSize * 0.5f;
+					sizeOffsetNext = vectorNormalize(sf::Vector2f(-averageDirection.y, averageDirection.x));
 				}
 				else
-					sizeOffsetNext = vectorNormalize(sf::Vector2f(-renderDirection.y, renderDirection.x)) * lineSize * 0.5f;
+					sizeOffsetNext = vectorNormalize(sf::Vector2f(-renderDirection.y, renderDirection.x));
+
+				sf::Vector2f perpendicular = vectorNormalize(sf::Vector2f(-renderDirection.y, renderDirection.x));
+
+				sizeOffset *= 1.0f / vectorDot(perpendicular, sizeOffset) * lineSize * 0.5f;
+				sizeOffsetNext *= 1.0f / vectorDot(perpendicular, sizeOffsetNext) * lineSize * 0.5f;
 
 				vertexArray[index].position = renderPoint - sizeOffset;
 				vertexArray[index].texCoords = sf::Vector2f(0.0f, 0.0f);
@@ -112,7 +120,18 @@ void Plot::draw(sf::RenderTarget &target, const sf::Texture &lineGradientTexture
 		vertexArray.resize(index);
 
 		vertexArray.setPrimitiveType(sf::PrimitiveType::Triangles);
-		
+
+		if (_curves[c]._shadow != 0.0f) {
+			sf::VertexArray shadowArray = vertexArray;
+
+			for (int v = 0; v < shadowArray.getVertexCount(); v++) {
+				shadowArray[v].position += _curves[c]._shadowOffset;
+				shadowArray[v].color = sf::Color(0, 0, 0, _curves[c]._shadow * 255.0f);
+			}
+
+			target.draw(shadowArray, &lineGradientTexture);
+		}
+
 		target.draw(vertexArray, &lineGradientTexture);
 	}
 
@@ -238,4 +257,8 @@ sf::Vector2f vis::vectorNormalize(const sf::Vector2f &vector) {
 	float magnitude = vectorMagnitude(vector);
 
 	return vector / magnitude;
+}
+
+float vis::vectorDot(const sf::Vector2f &left, const sf::Vector2f &right) {
+	return left.x * right.x + left.y * right.y;
 }

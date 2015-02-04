@@ -16,7 +16,14 @@ namespace vis {
 	struct Curve {
 		std::string _name;
 
+		float _shadow;
+		sf::Vector2f _shadowOffset;
+
 		std::vector<Point> _points;
+
+		Curve()
+			: _shadow(0.5f), _shadowOffset(-5.0f, 5.0f)
+		{}
 	};
 
 	struct Plot {
@@ -35,4 +42,5 @@ namespace vis {
 
 	float vectorMagnitude(const sf::Vector2f &vector);
 	sf::Vector2f vectorNormalize(const sf::Vector2f &vector);
+	float vectorDot(const sf::Vector2f &left, const sf::Vector2f &right);
 }

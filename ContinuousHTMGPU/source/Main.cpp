@@ -130,6 +130,9 @@ int main() {
 	float avgReward = 0.0f;
 	float avgRewardDecay = 0.003f;
 
+	float minReward = 0.0f;
+	float maxReward = 1.0f;
+
 	float totalTime = 0.0f;
 
 	float plotUpdateTimer = 0.0f;
@@ -188,15 +191,6 @@ int main() {
 
 	plot._curves.resize(1);
 	
-	for (int i = 0; i < 100; i++) {
-		vis::Point p;
-		p._position.x = i;
-		p._position.y = std::sin(i * 0.05f);
-		p._color = sf::Color(255 * (std::sin(i * 0.5f) * 0.5f + 0.5f), 255 * (std::cos(i * 0.5f) * 0.5f + 0.5f), 255, 255);
-
-		plot._curves[0]._points.push_back(p);
-	}
-
 	sf::RenderTexture plotRT;
 	plotRT.create(800, 600, false);
 
@@ -206,6 +200,9 @@ int main() {
 	sf::Font tickFont;
 	tickFont.loadFromFile("resources/arial.ttf");
 
+	const int plotSampleTicks = 60;
+	int plotSampleCounter = 0;
+	
 	do {
 		clock.restart();
 
@@ -256,6 +253,22 @@ int main() {
 		else
 			avgReward = (1.0f - avgRewardDecay) * avgReward + avgRewardDecay * reward;
 
+		minReward = std::min<float>(minReward, avgReward);
+		maxReward = std::max<float>(maxReward, avgReward);
+
+		if (plotSampleCounter == plotSampleTicks) {
+			plotSampleCounter = 0;
+
+			vis::Point p;
+			p._position.x = plot._curves[0]._points.size() - 1;
+			p._position.y = avgReward;
+			p._color = sf::Color::Red;
+
+			plot._curves[0]._points.push_back(p);
+		}
+
+		plotSampleCounter++;
+
 		sf::Image img = inputRT.getTexture().copyToImage();
 
 		for (int x = 0; x < 64; x++)
@@ -263,7 +276,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.01f, 0.8f, 10.0f, 0.2f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.7f, 0.994f, 0.0f, 0.1f, 0.2f, 10.0f, generator);
+		agent.step(cs, reward, 0.01f, 0.8f, 0.5f, 0.5f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.05f, 0.994f, 0.0f, 0.1f, 0.2f, 10.0f, generator);
 
 		float output = 0.0f;
 		int c = 0;
@@ -380,20 +393,27 @@ int main() {
 
 		window.draw(inputSprite);
 
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::B)) {
+			plotRT.setActive();
+			plotRT.clear(sf::Color::White);
+
+			plot.draw(plotRT, lineGradient, tickFont, 0.5f, sf::Vector2f(0.0f, plot._curves[0]._points.size()), sf::Vector2f(minReward, maxReward), sf::Vector2f(64.0f, 64.0f), sf::Vector2f(plot._curves[0]._points.size() / 10.0f, (maxReward - minReward) / 10.0f), 2.0f, 8.0f, 2.0f, 6.0f, 2.0f, 4);
+
+			plotRT.display();
+
+			sf::Sprite plotSprite;
+			plotSprite.setTexture(plotRT.getTexture());
+
+			window.draw(plotSprite);
+		}
+
 		if (sf::Keyboard::isKeyPressed(sf::Keyboard::V)) {
 			htmRT.setActive();
 			htmRT.clear(sf::Color::White);
 
-			//visualizer.update(htmRT, sf::Vector2f(512.0f, 512.0f), sf::Vector2f(1.95f, 1.95f), cs, agent, generator);
+			visualizer.update(htmRT, sf::Vector2f(512.0f, 512.0f), sf::Vector2f(1.95f, 1.95f), cs, agent, generator);
 
 			htmRT.display();
-
-			plotRT.setActive();
-			plotRT.clear(sf::Color::White);
-
-			plot.draw(plotRT, lineGradient, tickFont, 0.5f, sf::Vector2f(0.0f, 100.0f), sf::Vector2f(-2.0f, 2.0f), sf::Vector2f(64.0f, 64.0f), sf::Vector2f(10.0f, 0.5f), 2.0f, 8.0f, 2.0f, 6.0f, 2.0f, 2);
-
-			plotRT.display();
 
 			sf::Sprite htmSprite;
 			htmSprite.setTexture(htmRT.getTexture());
@@ -403,11 +423,6 @@ int main() {
 			htmSprite.setPosition(400.0f, 300.0f);
 
 			window.draw(htmSprite);
-
-			sf::Sprite plotSprite;
-			plotSprite.setTexture(plotRT.getTexture());
-
-			window.draw(plotSprite);
 		}
 
 		// -------------------------------------------------------------------
