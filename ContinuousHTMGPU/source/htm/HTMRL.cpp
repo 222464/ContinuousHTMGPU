@@ -574,6 +574,8 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 		prevLayerHeight = _layerDescs[l]._height;
 	}
 
+	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
+
 	for (int l = _layers.size() - 1; l >= 0; l--) {
 		if (l == _layers.size() - 1)
 			predictLayerLast(cs, _layers[l], _layerDescs[l], generator);
@@ -604,8 +606,6 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 
 	for (int l = _layers.size() - 1; l >= 0; l--)
 		assignLayerQ(cs, _layers[l], _layerDescs[l], alpha * tdError);
-
-	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
 
 	learnSpatial(cs, columnConnectionAlpha, widthAlpha, seed);
 
@@ -737,7 +737,7 @@ void HTMRL::determineLayerTdError(sys::ComputeSystem &cs, Layer &layer, LayerDes
 	_layerTdErrorKernel.setArg(0, layer._cellStatesPrev);
 	_layerTdErrorKernel.setArg(1, layer._columnStatesPrev);
 	_layerTdErrorKernel.setArg(2, layer._columnStates);
-	_layerTdErrorKernel.setArg(3, layer._columnDutyCyclesPrev);
+	_layerTdErrorKernel.setArg(3, layer._columnDutyCycles);
 	_layerTdErrorKernel.setArg(4, layer._columnQValues);
 	_layerTdErrorKernel.setArg(5, layer._columnPrevValuesPrev);
 	_layerTdErrorKernel.setArg(6, layer._columnTdErrors);
@@ -813,10 +813,6 @@ void HTMRL::learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D 
 	inputReceptiveFieldRadius._x = layerDesc._receptiveFieldRadius;
 	inputReceptiveFieldRadius._y = layerDesc._receptiveFieldRadius;
 
-	Int2 layerReceptiveFieldRadius;
-	layerReceptiveFieldRadius._x = layerDesc._receptiveFieldRadius;
-	layerReceptiveFieldRadius._y = layerDesc._receptiveFieldRadius;
-
 	Int2 inputSizeMinusOne;
 	inputSizeMinusOne._x = layerDesc._width - 1;
 	inputSizeMinusOne._y = layerDesc._height - 1;
@@ -827,7 +823,7 @@ void HTMRL::learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D 
 	_layerColumnWeightUpdateKernel.setArg(2, layer._columnStates);
 	_layerColumnWeightUpdateKernel.setArg(3, layer._columnStatesPrev);
 	_layerColumnWeightUpdateKernel.setArg(4, layer._columnWeightsPrev);
-	_layerColumnWeightUpdateKernel.setArg(5, layer._columnDutyCyclesPrev);
+	_layerColumnWeightUpdateKernel.setArg(5, layer._columnDutyCycles);
 	_layerColumnWeightUpdateKernel.setArg(6, layer._columnWeights);
 	_layerColumnWeightUpdateKernel.setArg(7, layerSizeMinusOneInv);
 	_layerColumnWeightUpdateKernel.setArg(8, inputReceptiveFieldRadius);
@@ -1455,8 +1451,8 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		}
 	}
 	else {
-		for (int l = 0; l < 1; l++) {
-			std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn);
+		for (int l = 0; l < _layers.size(); l++) {
+			std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn * 2);
 
 			cl::size_t<3> origin;
 			origin[0] = 0;
@@ -1468,7 +1464,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 			region[1] = _layerDescs[l]._height;
 			region[2] = _layerDescs[l]._cellsInColumn;
 
-			cs.getQueue().enqueueReadImage(_layers[l]._cellQValues, CL_TRUE, origin, region, 0, 0, &state[0]);
+			cs.getQueue().enqueueReadImage(_layers[l]._cellStates, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 			sf::Color c;
 			c.r = uniformDist(generator) * 255.0f;
@@ -1487,7 +1483,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 
 					color = c;
 
-					color.a = std::min<float>(1.0f, std::max<float>(0.0f, std::max<float>(0.0f, sigmoid(state[0 + 1 * (x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width *_layerDescs[l]._height)])))) * (255.0f - 3.0f) + 3;
+					color.a = std::min<float>(1.0f, std::max<float>(0.0f, std::max<float>(0.0f, state[0 + 2 * (x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width *_layerDescs[l]._height)]))) * (255.0f - 3.0f) + 3;
 
 					//color.g = std::min<float>(1.0f, std::max<float>(0.0f, std::max<float>(0.0f, state[2 + 4 * (x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width *_layerDescs[l]._height)]))) * (255.0f - 3.0f) + 3;
 
