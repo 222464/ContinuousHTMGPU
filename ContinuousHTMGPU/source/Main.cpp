@@ -153,7 +153,6 @@ int main() {
 	layerDescs[3]._width = 20;
 	layerDescs[3]._height = 20;
 
-
 	std::vector<htm::HTMRL::InputType> inputTypes(64 * 64, htm::HTMRL::_state);
 
 	for (int x = 0; x < 64; x++) {
@@ -167,7 +166,7 @@ int main() {
 
 	std::vector<int> actionIndices;
 
-	for (int i = 0; i < 32; i++) {
+	for (int i = 0; i < 8; i++) {
 		int x = actionXDist(generator);
 		int y = actionYDist(generator);
 
@@ -246,7 +245,7 @@ int main() {
 
 		//reward = dFitness * 5.0f;
 
-		reward = fitness;
+		reward = dFitness;
 
 		if (totalTime == 0.0f)
 			avgReward = reward;
@@ -276,7 +275,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.01f, 1.0f, 0.5f, 0.5f, 1.0f, 1.0f, 0.01f, 0.01f, 0.1f, 0.05f, 0.994f, 0.0f, 0.1f, 0.2f, 10.0f, generator);
+		agent.step(cs, reward, 0.01f, 1.0f, 0.5f, 0.5f, 1.0f, 0.01f, 0.01f, 0.01f, 0.1f, 0.05f, 0.994f, 0.0f, 0.1f, 0.2f, 10.0f, generator);
 
 		float output = 0.0f;
 		int c = 0;

@@ -598,7 +598,7 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 
 	float value = retreiveQ(cs);
 
-	float tdError = reward + gamma * value - _prevValue;
+	float tdError = reward;// +gamma * value - _prevValue;
 
 	std::cout << "R: " << reward << "Q: " << reward + gamma * value << " T: " << tdError << std::endl;
 
@@ -1128,7 +1128,7 @@ void HTMRL::getReconstruction(std::vector<float> &prediction, sys::ComputeSystem
 	sdrSizeMinusOneInv._x = 1.0f / (_layerDescs.front()._width - 1);
 	sdrSizeMinusOneInv._y = 1.0f / (_layerDescs.front()._height - 1);
 
-	_reconstructInputKernel.setArg(0, _layers.front()._columnWeightsPrev);
+	_reconstructInputKernel.setArg(0, _layers.front()._columnWeights);
 	_reconstructInputKernel.setArg(1, _layers.front()._columnStates);
 	_reconstructInputKernel.setArg(2, _reconstruction);
 	_reconstructInputKernel.setArg(3, reconstructionReceptiveFieldRadii);
@@ -1197,7 +1197,7 @@ void HTMRL::getReconstructedPrediction(std::vector<float> &prediction, sys::Comp
 	sdrSizeMinusOneInv._x = 1.0f / (_layerDescs.front()._width - 1);
 	sdrSizeMinusOneInv._y = 1.0f / (_layerDescs.front()._height - 1);
 
-	_reconstructInputKernel.setArg(0, _layers.front()._columnWeightsPrev);
+	_reconstructInputKernel.setArg(0, _layers.front()._columnWeights);
 	_reconstructInputKernel.setArg(1, _layers.front()._columnPredictions);
 	_reconstructInputKernel.setArg(2, _reconstruction);
 	_reconstructInputKernel.setArg(3, reconstructionReceptiveFieldRadii);
@@ -1266,7 +1266,7 @@ void HTMRL::getReconstructedPrevPrediction(std::vector<float> &prediction, sys::
 	sdrSizeMinusOneInv._x = 1.0f / (_layerDescs.front()._width - 1);
 	sdrSizeMinusOneInv._y = 1.0f / (_layerDescs.front()._height - 1);
 
-	_reconstructInputKernel.setArg(0, _layers.front()._columnWeightsPrev);
+	_reconstructInputKernel.setArg(0, _layers.front()._columnWeights);
 	_reconstructInputKernel.setArg(1, _layers.front()._columnPredictionsPrev);
 	_reconstructInputKernel.setArg(2, _reconstruction);
 	_reconstructInputKernel.setArg(3, reconstructionReceptiveFieldRadii);
