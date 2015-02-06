@@ -44,7 +44,7 @@ namespace htm {
 
 			LayerDesc()
 				: _width(16), _height(16), _receptiveFieldRadius(4), _lateralConnectionRadius(6), _inhibitionRadius(3), _dutyCycleRadius(4), _cellsInColumn(4),
-				_qInfluenceMultiplier(1.0f), _noMatchTolerance(0.01f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(0.5f), _numTdErrorBlurPasses(4), _tdErrorBlurKernelWidthMultiplier(1.0f), _columnQRadius(5)
+				_qInfluenceMultiplier(1.0f), _noMatchTolerance(0.0001f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(0.5f), _numTdErrorBlurPasses(4), _tdErrorBlurKernelWidthMultiplier(1.0f), _columnQRadius(5)
 			{}
 		};
 
@@ -148,10 +148,8 @@ namespace htm {
 		
 		void learnTemporal(sys::ComputeSystem &cs, float tdError, float cellConnectionAlpha, float cellConnectionBeta, float cellConnectionTemperature, float cellWeightEligibilityDecay, unsigned long seed);
 
-		void dutyCycleUpdate(sys::ComputeSystem &cs, float activationDutyCycleDecay, float stateDutyCycleDecay);
-
 		void initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl::Kernel &initPartTwoKernel, int inputWidth, int inputHeight, int inputCellsPerColumn, Layer &layer, const LayerDesc &layerDesc, bool isTopmost, float minInitWeight, float maxInitWeight, float minInitCenter, float maxInitCenter, float minInitWidth, float maxInitWidth, std::mt19937 &generator);
-		void activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, Layer &layer, const LayerDesc &layerDesc, float cellStateDecay, std::mt19937 &generator);
+		void activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, float activationDutyCycleDecay, float stateDutyCycleDecay, Layer &layer, const LayerDesc &layerDesc, float cellStateDecay, std::mt19937 &generator);
 		void predictLayer(sys::ComputeSystem &cs, cl::Image2D &nextLayerPrediction, int nextLayerWidth, int nextLayerHeight, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
 		void predictLayerLast(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, std::mt19937 &generator);
 		void determineLayerColumnQ(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, Layer &nextLayer, LayerDesc &nextLayerDesc);

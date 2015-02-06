@@ -347,7 +347,7 @@ void HTMRL::stepBegin() {
 	}
 }
 
-void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, Layer &layer, const LayerDesc &layerDesc, float cellStateDecay, std::mt19937 &generator) {
+void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, int prevLayerWidth, int prevLayerHeight, float activationDutyCycleDecay, float stateDutyCycleDecay, Layer &layer, const LayerDesc &layerDesc, float cellStateDecay, std::mt19937 &generator) {
 	struct Uint2 {
 		unsigned int _x, _y;
 	};
@@ -426,6 +426,8 @@ void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, 
 
 	cs.getQueue().enqueueNDRangeKernel(_layerColumnInhibitKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
+	dutyCycleLayerUpdate(cs, layer, layerDesc, activationDutyCycleDecay, stateDutyCycleDecay);
+
 	Int2 lateralConnectionRadii;
 	lateralConnectionRadii._x = layerDesc._lateralConnectionRadius;
 	lateralConnectionRadii._y = layerDesc._lateralConnectionRadius;
@@ -436,11 +438,12 @@ void HTMRL::activateLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutput, 
 	_layerCellActivateKernel.setArg(2, layer._cellPredictionsPrev);
 	_layerCellActivateKernel.setArg(3, layer._cellWeightsPrev);
 	_layerCellActivateKernel.setArg(4, layer._columnPredictionsPrev);
-	_layerCellActivateKernel.setArg(5, layer._cellStates);
-	_layerCellActivateKernel.setArg(6, layerDesc._cellsInColumn);
-	_layerCellActivateKernel.setArg(7, lateralConnectionRadii);
-	_layerCellActivateKernel.setArg(8, cellStateDecay);
-	_layerCellActivateKernel.setArg(9, seed2);
+	_layerCellActivateKernel.setArg(5, layer._columnDutyCycles);
+	_layerCellActivateKernel.setArg(6, layer._cellStates);
+	_layerCellActivateKernel.setArg(7, layerDesc._cellsInColumn);
+	_layerCellActivateKernel.setArg(8, lateralConnectionRadii);
+	_layerCellActivateKernel.setArg(9, cellStateDecay);
+	_layerCellActivateKernel.setArg(10, seed2);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerCellActivateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 }
@@ -564,7 +567,7 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 	int prevLayerHeight = _inputHeight;
 
 	for (int l = 0; l < _layers.size(); l++) {
-		activateLayer(cs, *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, _layers[l], _layerDescs[l], cellStateDecay, generator);
+		activateLayer(cs, *pPrevLayerOutput, prevLayerWidth, prevLayerHeight, activationDutyCycleDecay, stateDutyCycleDecay, _layers[l], _layerDescs[l], cellStateDecay, generator);
 		
 		// Blur output
 		gaussianBlur(cs, _layers[l]._columnStates, _layers[l]._blurPing, _layers[l]._blurPong, _layerDescs[l]._width, _layerDescs[l]._height, _layerDescs[l]._numColumnStateBlurPasses, _layerDescs[l]._columnStateBlurKernelWidthMultiplier);
@@ -573,8 +576,6 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 		prevLayerWidth = _layerDescs[l]._width;
 		prevLayerHeight = _layerDescs[l]._height;
 	}
-
-	dutyCycleUpdate(cs, activationDutyCycleDecay, stateDutyCycleDecay);
 
 	for (int l = _layers.size() - 1; l >= 0; l--) {
 		if (l == _layers.size() - 1)
@@ -598,7 +599,7 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 
 	float value = retreiveQ(cs);
 
-	float tdError = reward;// +gamma * value - _prevValue;
+	float tdError = reward + gamma * value - _prevValue;
 
 	std::cout << "R: " << reward << "Q: " << reward + gamma * value << " T: " << tdError << std::endl;
 
@@ -609,7 +610,7 @@ void HTMRL::activate(std::vector<float> &input, sys::ComputeSystem &cs, float re
 
 	learnSpatial(cs, columnConnectionAlpha, widthAlpha, seed);
 
-	learnTemporal(cs, tdError, cellConnectionAlpha, cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, seed + 1);
+	learnTemporal(cs, tdError, cellConnectionAlpha * (tdError > 0.0f ? 1.0f : 0.0f), cellConnectionBeta, cellConnectionTemperature, cellWeightEligibilityDecay, seed + 1);
 }
 
 void HTMRL::determineLayerColumnQ(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, Layer &nextLayer, LayerDesc &nextLayerDesc) {
@@ -676,41 +677,45 @@ void HTMRL::determineLayerColumnQLast(sys::ComputeSystem &cs, Layer &layer, Laye
 }
 
 float HTMRL::retreiveQ(sys::ComputeSystem &cs) {
-	cl::size_t<3> origin;
-	origin[0] = 0;
-	origin[1] = 0;
-	origin[2] = 0;
+	float total = 0.0f;
 
-	cl::size_t<3> region;
-	region[0] = _layerDescs.front()._width;
-	region[1] = _layerDescs.front()._height;
-	region[2] = 1;
+	for (int l = 0; l < _layers.size(); l++) {
+		cl::size_t<3> origin;
+		origin[0] = 0;
+		origin[1] = 0;
+		origin[2] = 0;
 
-	std::vector<float> layerQ(_layerDescs.front()._width * _layerDescs.front()._height);
+		cl::size_t<3> region;
+		region[0] = _layerDescs[l]._width;
+		region[1] = _layerDescs[l]._height;
+		region[2] = 1;
 
-	cs.getQueue().enqueueReadImage(_layers.front()._columnQValues, CL_TRUE, origin, region, 0, 0, &layerQ[0]);
-	
-	std::vector<float> layerColumns(_layerDescs.front()._width * _layerDescs.front()._height * 2);
+		std::vector<float> layerQ(_layerDescs[l]._width * _layerDescs[l]._height);
 
-	cs.getQueue().enqueueReadImage(_layers.front()._columnStates, CL_TRUE, origin, region, 0, 0, &layerColumns[0]);
+		cs.getQueue().enqueueReadImage(_layers[l]._columnQValues, CL_TRUE, origin, region, 0, 0, &layerQ[0]);
 
-	std::vector<float> layerColumnsPrev(_layerDescs.front()._width * _layerDescs.front()._height * 2);
+		std::vector<float> layerColumns(_layerDescs[l]._width * _layerDescs.front()._height * 2);
 
-	cs.getQueue().enqueueReadImage(_layers.front()._columnStatesPrev, CL_TRUE, origin, region, 0, 0, &layerColumnsPrev[0]);
+		cs.getQueue().enqueueReadImage(_layers[l]._columnStates, CL_TRUE, origin, region, 0, 0, &layerColumns[0]);
 
-	float sum = 0.0f;
-	float divisor = 0.0f;
+		std::vector<float> layerColumnsPrev(_layerDescs[l]._width * _layerDescs.front()._height * 2);
 
-	for (int i = 0; i < layerQ.size(); i++) {
-		float contribution = layerColumns[i * 2] * (1.0f - layerColumnsPrev[i * 2]);
-		sum += contribution * layerQ[i];
-		divisor += contribution;
+		cs.getQueue().enqueueReadImage(_layers[l]._columnStatesPrev, CL_TRUE, origin, region, 0, 0, &layerColumnsPrev[0]);
+
+		float sum = 0.0f;
+		float divisor = 0.0f;
+
+		for (int i = 0; i < layerQ.size(); i++) {
+			float contribution = layerColumns[i * 2] * (1.0f - layerColumnsPrev[i * 2]);
+			sum += contribution * layerQ[i];
+			divisor += contribution;
+		}
+
+		if (divisor != 0.0f)
+			total += sum / divisor;
 	}
-
-	if (divisor == 0.0f)
-		return 0.0f;
 	
-	return sum / divisor;
+	return total / _layers.size();
 }
 
 void HTMRL::determineLayerTdError(sys::ComputeSystem &cs, Layer &layer, LayerDesc &layerDesc, float reward, float alpha, float gamma) {
@@ -1039,11 +1044,6 @@ void HTMRL::dutyCycleLayerUpdate(sys::ComputeSystem &cs, Layer &layer, const Lay
 	_layerColumnDutyCycleUpdateKernel.setArg(7, stateDutyCycleDecay);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerColumnDutyCycleUpdateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
-}
-
-void HTMRL::dutyCycleUpdate(sys::ComputeSystem &cs, float activationDutyCycleDecay, float stateDutyCycleDecay) {
-	for (int l = 0; l < _layers.size(); l++)
-		dutyCycleLayerUpdate(cs, _layers[l], _layerDescs[l], activationDutyCycleDecay, stateDutyCycleDecay);
 }
 
 void HTMRL::gaussianBlur(sys::ComputeSystem &cs, cl::Image2D &source, cl::Image2D &ping, cl::Image2D &pong, int imageSizeX, int imageSizeY, int passes, float kernelWidth) {
@@ -1503,7 +1503,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 		}
 
 		/*for (int l = 0; l < _layers.size(); l++) {
-			std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * 2);
+			std::vector<float> state(_layerDescs[l]._width * _layerDescs[l]._height * _layerDescs[l]._cellsInColumn);
 
 			cl::size_t<3> origin;
 			origin[0] = 0;
@@ -1515,7 +1515,7 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 			region[1] = _layerDescs[l]._height;
 			region[2] = 1;
 
-			cs.getQueue().enqueueReadImage(_layers[l]._blurPong, CL_TRUE, origin, region, 0, 0, &state[0]);
+			cs.getQueue().enqueueReadImage(_layers[l]._cellQValues, CL_TRUE, origin, region, 0, 0, &state[0]);
 
 			sf::Color c;
 			c.r = uniformDist(generator) * 255.0f;
@@ -1523,27 +1523,34 @@ void HTMRL::exportCellData(sys::ComputeSystem &cs, std::vector<std::shared_ptr<s
 			c.b = uniformDist(generator) * 255.0f;
 
 			// Convert to colors
-			std::shared_ptr<sf::Image> image = std::make_shared<sf::Image>();
+			for (int ci = 0; ci < _layerDescs[l]._cellsInColumn; ci++) {
+				std::shared_ptr<sf::Image> image = std::make_shared<sf::Image>();
 
-			image->create(maxWidth, maxHeight, sf::Color::Transparent);
+				image->create(maxWidth, maxHeight, sf::Color::Transparent);
 
-			for (int x = 0; x < _layerDescs[l]._width; x++)
-			for (int y = 0; y < _layerDescs[l]._height; y++) {
-				sf::Color color;
+				for (int x = 0; x < _layerDescs[l]._width; x++)
+					for (int y = 0; y < _layerDescs[l]._height; y++) {
+					sf::Color color;
 
-				color = c;
+					color = c;
 
-				color.a = std::min<float>(1.0f, std::max<float>(0.0f, state[0 + 2 * (x + y * _layerDescs[l]._width)] > 0.0f ? 1.0f : 0.0f)) * (255.0f - 3.0f) + 3;
+					color.a = std::min<float>(1.0f, std::max<float>(0.0f, std::max<float>(0.0f, sigmoid(state[0 + 1 * (x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width *_layerDescs[l]._height)])))) * (255.0f - 3.0f) + 3;
 
-				int wx = x - _layerDescs[l]._width / 2 + maxWidth / 2;
-				int wy = y - _layerDescs[l]._height / 2 + maxHeight / 2;
+					//color.g = std::min<float>(1.0f, std::max<float>(0.0f, std::max<float>(0.0f, state[2 + 4 * (x + y * _layerDescs[l]._width + ci * _layerDescs[l]._width *_layerDescs[l]._height)]))) * (255.0f - 3.0f) + 3;
 
-				assert(wx >= 0 && wy >= 0 && wx < maxWidth && wy < maxHeight);
+					//color.b = 0;
+					//color.a = 0.5f * (color.r + color.g);
 
-				image->setPixel(wx, wy, color);
+					int wx = x - _layerDescs[l]._width / 2 + maxWidth / 2;
+					int wy = y - _layerDescs[l]._height / 2 + maxHeight / 2;
+
+					assert(wx >= 0 && wy >= 0 && wx < maxWidth && wy < maxHeight);
+
+					image->setPixel(wx, wy, color);
+					}
+
+				images.push_back(image);
 			}
-
-			images.push_back(image);
 		}*/
 	}
 }
