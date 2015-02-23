@@ -30,7 +30,7 @@ constant float segmentSparsity = 0.3f;
 constant float columnTraceDecay = 0.002f;
 constant float columnMomentum = 0.05f;
 constant float columnRandomness = 0.1f;
-constant float minDerivative = 0.05f;
+constant float minDerivative = 0.1f;
 constant float minSimilarity = 0.0001f;
 constant float minLearn = 0.0f;
 constant float learnFalloff = 0.1f;
@@ -45,7 +45,7 @@ constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
 constant float localActivity = 1.0f;
 constant float reconstructionErrorActivity = 2.0f;
-constant float boostThreshold = 0.02f;
+constant float boostThreshold = 0.1f;
 constant float rectifierLeak = 0.03f;
 constant float minDivisor = 0.0001f;
 constant float higherLayerQPower = 16.0f;
@@ -177,7 +177,7 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 	// Bias
 	float bias = read_imagef(columnFeedForwardWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 	
-	//sum += bias;
+	sum += bias;
 	
 	write_imagef(columnActivations, columnPosition, (float4)(sum, 0.0f, 0.0f, 0.0f));
 }
@@ -204,7 +204,7 @@ void kernel layerColumnInhibitBinary(read_only image2d_t columnActivations, read
 	
 	float prevTrace = read_imagef(columnStatesPrev, columnPosition).y;
 	
-	float newState = numHigher < localActivity && thisActivation > 0.0f ? 1.0f : 0.0f;//exp(-numHigher * columnIntensity) * sigmoid(thisActivation); //&& thisActivation > 0.0f 
+	float newState = numHigher < localActivity ? 1.0f : 0.0f;//exp(-numHigher * columnIntensity) * sigmoid(thisActivation); //&& thisActivation > 0.0f 
 	
 	float newTrace = (1.0f - columnTraceDecay) * prevTrace + columnTraceDecay * newState;
 	
@@ -231,7 +231,7 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, read_only 
 		}
 	}
 	
-	float newState = numHigher < localActivity && thisActivation > 0.0f ? 1.0f : 0.0f;
+	float newState = numHigher < localActivity ? 1.0f : 0.0f;
 	
 	write_imagef(columnStates, columnPosition, (float4)(newState, 0.0f, 0.0f, 0.0f));
 }
@@ -257,7 +257,7 @@ void kernel layerColumnInhibitProbablistic(read_only image2d_t columnActivations
 		}
 	}
 	
-	float probability = numHigher < localActivity && thisActivation > 0.0f ? 1.0f - columnRandomness : columnRandomness;// * (thisActivation > 0.0f ? 1.0f : 0.0f)
+	float probability = numHigher < localActivity ? 1.0f - columnRandomness : columnRandomness;// * (thisActivation > 0.0f ? 1.0f : 0.0f)
 	
 	float newState = randFloat(&seedValue) < probability ? 1.0f : 0.0f;
 	
@@ -332,7 +332,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t reconstruction, read_onl
 
 	float2 prevWeight = read_imagef(columnFeedForwardWeightsPrev, weightPosition).xy;
 	
-	float delta = prevWeight.y * columnMomentum + alpha * (thisState - thisStateReconstruction);
+	float delta = prevWeight.y * columnMomentum + beta * (thisState - thisStateReconstruction);
 	
 	float newWeight = prevWeight.x + delta;
 	
@@ -423,28 +423,16 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
 		
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		float cellPredictionPrev = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		float2 cellPredictionPrev = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		
-		float cellError = cellState - cellPredictionPrev;//(cellState - cellPredictionPrev);//((1.0f - columnState) * columnPredictionPrev + columnState) * 
+		float cellError = cellState - cellPredictionPrev.y;//(cellState - cellPredictionPrev);//((1.0f - columnState) * columnPredictionPrev + columnState) * 
 		
 		float errors[MAX_SEGMENTS_PER_CELL];
 		
-		float averageActivation = 0.0f;
-		
 		for (int i = 0; i < numSegmentsPerCell; i++) {
 			float value = read_imagef(segmentStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci * numSegmentsPerCell + i, 0)).x;
-			
-			averageActivation += value;
-		}
-		
-		averageActivation /= numSegmentsPerCell;
-		
-		float sparsityAdjustment = gamma * (segmentSparsity - averageActivation) * cellState;
-		
-		for (int i = 0; i < numSegmentsPerCell; i++) {
-			float value = read_imagef(segmentStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci * numSegmentsPerCell + i, 0)).x;
-			
-			errors[i] = cellError * value + sparsityAdjustment;
+
+			errors[i] = cellError * (value == cellPredictionPrev.y ? 1.0f : minDerivative);
 		}
 		
 		// Go through all connections and update them
@@ -536,28 +524,16 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 		int weightSecondCoordinate = ci + columnPosition.y * cellsInColumn;
 		
 		float cellState = read_imagef(cellStates, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
-		float cellPredictionPrev = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		float2 cellPredictionPrev = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).xy;
 		
-		float cellError = cellState - cellPredictionPrev;//(cellState - cellPredictionPrev);//((1.0f - columnState) * columnPredictionPrev + columnState) * 
+		float cellError = cellState - cellPredictionPrev.y;//(cellState - cellPredictionPrev);//((1.0f - columnState) * columnPredictionPrev + columnState) * 
 		
 		float errors[MAX_SEGMENTS_PER_CELL];
 		
-		float averageActivation = 0.0f;
-		
 		for (int i = 0; i < numSegmentsPerCell; i++) {
 			float value = read_imagef(segmentStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci * numSegmentsPerCell + i, 0)).x;
-			
-			averageActivation += value;
-		}
-		
-		averageActivation /= numSegmentsPerCell;
-		
-		float sparsityAdjustment = gamma * (segmentSparsity - averageActivation) * cellState;
-		
-		for (int i = 0; i < numSegmentsPerCell; i++) {
-			float value = read_imagef(segmentStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci * numSegmentsPerCell + i, 0)).x;
-			
-			errors[i] = cellError * value + sparsityAdjustment;
+
+			errors[i] = cellError * (value == cellPredictionPrev.y ? 1.0f : minDerivative);
 		}
 		
 		// Go through all connections and update them
@@ -680,17 +656,17 @@ void kernel layerCellPredict(read_only image3d_t cellStates, read_only image3d_t
 			wi++;
 		}
 		
-		float sumSum = 0.0f;
+		float maximum = 0.0f;
 		
 		for (int i = 0; i < numSegmentsPerCell; i++) {
-			float value = sums[i] > 0.0f ? 1.0f : 0.0f;
+			float s = sigmoid(sums[i]);
 			
-			sumSum += value;
+			maximum = fmax(maximum, s);
 			
-			write_imagef(segmentStates, (int4)(columnPosition.x, columnPosition.y, ci * numSegmentsPerCell + i, 0), (float4)(value, 0.0f, 0.0f, 0.0f));
+			write_imagef(segmentStates, (int4)(columnPosition.x, columnPosition.y, ci * numSegmentsPerCell + i, 0), (float4)(s, 0.0f, 0.0f, 0.0f));
 		}
 		
-		write_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(sumSum > 0.0f ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f));
+		write_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(maximum > 0.5f ? 1.0f : 0.0f, maximum, 0.0f, 0.0f));
 	}
 }
 
@@ -744,17 +720,17 @@ void kernel layerCellPredictLast(read_only image3d_t cellStates, read_only image
 			wi++;
 		}
 		
-		float sumSum = 0.0f;
+		float maximum = 0.0f;
 		
 		for (int i = 0; i < numSegmentsPerCell; i++) {
-			float value = sums[i] > 0.0f ? 1.0f : 0.0f;
+			float s = sigmoid(sums[i]);
 			
-			sumSum += value;
+			maximum = fmax(maximum, s);
 			
-			write_imagef(segmentStates, (int4)(columnPosition.x, columnPosition.y, ci * numSegmentsPerCell + i, 0), (float4)(value, 0.0f, 0.0f, 0.0f));
+			write_imagef(segmentStates, (int4)(columnPosition.x, columnPosition.y, ci * numSegmentsPerCell + i, 0), (float4)(s, 0.0f, 0.0f, 0.0f));
 		}
 		
-		write_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(sumSum > 0.0f ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f));
+		write_imagef(cellPredictions, (int4)(columnPosition.x, columnPosition.y, ci, 0), (float4)(maximum > 0.5f ? 1.0f : 0.0f, maximum, 0.0f, 0.0f));
 	}
 }
 
@@ -884,9 +860,9 @@ void kernel reconstructInput(read_only image3d_t columnFeedForwardWeights, read_
 
 	float bias = read_imagef(inputBiases, inputPosition).x;
 				
-	//sum += bias;
+	sum += bias;
 	
-	write_imagef(reconstruction, inputPosition, (float4)(fmin(1.0f, fmax(0.0f, sum)), 0.0f, 0.0f, 0.0f));
+	write_imagef(reconstruction, inputPosition, (float4)(sigmoid(sum), 0.0f, 0.0f, 0.0f));
 }
 
 void kernel inputBiasUpdate(read_only image2d_t inputs, read_only image2d_t reconstruction, read_only image2d_t inputBiasesPrev, write_only image2d_t inputBiases, 

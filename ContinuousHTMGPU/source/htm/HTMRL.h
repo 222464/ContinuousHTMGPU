@@ -42,7 +42,7 @@ namespace htm {
 			float _qImportance;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(3), _lateralConnectionRadius(3), _inhibitionRadius(2), _cellsInColumn(3), _numSegmentsPerCell(4),
+				: _width(16), _height(16), _receptiveFieldRadius(3), _lateralConnectionRadius(3), _inhibitionRadius(2), _cellsInColumn(3), _numSegmentsPerCell(3),
 				_qInfluenceMultiplier(1.0f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(1.0f), _columnInfluenceRadius(5), _qImportance(1.0f)
 			{}
 		};
