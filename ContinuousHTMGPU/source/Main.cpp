@@ -139,7 +139,7 @@ int main() {
 
 	htm::HTMRL agent;
 
-	std::vector<htm::HTMRL::LayerDesc> layerDescs(4);
+	std::vector<htm::HTMRL::LayerDesc> layerDescs(5);
 
 	layerDescs[0]._width = 64;
 	layerDescs[0]._height = 64;
@@ -152,6 +152,9 @@ int main() {
 
 	layerDescs[3]._width = 20;
 	layerDescs[3]._height = 20;
+
+	layerDescs[4]._width = 16;
+	layerDescs[4]._height = 16;
 
 	std::vector<htm::HTMRL::InputType> inputTypes(64 * 64, htm::HTMRL::_state);
 
@@ -166,6 +169,16 @@ int main() {
 
 	std::vector<int> actionIndices;
 
+	/*for (int x = 28; x < 34; x++)
+	for (int y = 48; y < 54; y++) {
+		if (inputTypes[x + y * 64] == htm::HTMRL::_action)
+			continue;
+
+		inputTypes[x + y * 64] = htm::HTMRL::_action;
+
+		actionIndices.push_back(x + y * 64);
+	}*/
+
 	for (int i = 0; i < 8; i++) {
 		int x = actionXDist(generator);
 		int y = actionYDist(generator);
@@ -178,7 +191,7 @@ int main() {
 		actionIndices.push_back(x + y * 64);
 	}
 
-	agent.createRandom(cs, program, 64, 64, layerDescs, inputTypes, -0.05f, 0.05f, -0.2f, 0.2f, generator);
+	agent.createRandom(cs, program, 64, 64, 4, layerDescs, inputTypes, -0.05f, 0.05f, -0.05f, 0.05f, generator);
 
 	sf::RenderTexture htmRT;
 	htmRT.create(1024, 1024, false);
@@ -275,7 +288,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.01f, 0.2f, 0.5f, 0.5f, 1.0f, 0.01f, 0.01f, 0.01f, 0.1f, 0.05f, 0.994f, 0.0f, 0.1f, 0.1f, 10.0f, generator);
+		agent.step(cs, reward, 0.01f, 0.01f, 0.01f, 0.01f, 0.01f, 0.01f, 0.05f, 0.5f, 0.5f, 0.5f, 0.01f, 0.6f, 0.992f, 0.15f, 0.15f, 120, 10, 2, generator);
 
 		float output = 0.0f;
 		int c = 0;
@@ -396,7 +409,7 @@ int main() {
 			plotRT.setActive();
 			plotRT.clear(sf::Color::White);
 
-			plot.draw(plotRT, lineGradient, tickFont, 0.5f, sf::Vector2f(0.0f, plot._curves[0]._points.size()), sf::Vector2f(minReward, maxReward), sf::Vector2f(64.0f, 64.0f), sf::Vector2f(plot._curves[0]._points.size() / 10.0f, (maxReward - minReward) / 10.0f), 2.0f, 8.0f, 2.0f, 6.0f, 2.0f, 4);
+			plot.draw(plotRT, lineGradient, tickFont, 0.5f, sf::Vector2f(0.0f, plot._curves[0]._points.size()), sf::Vector2f(minReward, maxReward), sf::Vector2f(64.0f, 64.0f), sf::Vector2f(plot._curves[0]._points.size() / 10.0f, (maxReward - minReward) / 10.0f), 2.0f, 4.0f, 2.0f, 6.0f, 2.0f, 4);
 
 			plotRT.display();
 

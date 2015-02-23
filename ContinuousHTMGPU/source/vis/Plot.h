@@ -22,7 +22,7 @@ namespace vis {
 		std::vector<Point> _points;
 
 		Curve()
-			: _shadow(0.5f), _shadowOffset(-5.0f, 5.0f)
+			: _shadow(0.5f), _shadowOffset(-4.0f, 4.0f)
 		{}
 	};
 
