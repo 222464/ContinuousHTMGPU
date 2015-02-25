@@ -1,5 +1,5 @@
 ContinuousHTMGPU
-Copyright (C) 2014 Eric Laukien
+Copyright (C) 2014-2015 Eric Laukien
 
 This software is provided 'as-is', without any express or implied
 warranty.  In no event will the authors be held liable for any damages
