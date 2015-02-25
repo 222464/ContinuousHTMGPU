@@ -175,9 +175,9 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 	}
 	
 	// Bias
-	float bias = read_imagef(columnFeedForwardWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
+	//float bias = read_imagef(columnFeedForwardWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 	
-	sum += bias;
+	//sum += bias;
 	
 	write_imagef(columnActivations, columnPosition, (float4)(sum, 0.0f, 0.0f, 0.0f));
 }
@@ -204,7 +204,7 @@ void kernel layerColumnInhibitBinary(read_only image2d_t columnActivations, read
 	
 	float prevTrace = read_imagef(columnStatesPrev, columnPosition).y;
 	
-	float newState = numHigher < localActivity ? 1.0f : 0.0f;//exp(-numHigher * columnIntensity) * sigmoid(thisActivation); //&& thisActivation > 0.0f 
+	float newState = numHigher < localActivity && thisActivation > 0.0f ? 1.0f : 0.0f;//exp(-numHigher * columnIntensity) * sigmoid(thisActivation); //&& thisActivation > 0.0f 
 	
 	float newTrace = (1.0f - columnTraceDecay) * prevTrace + columnTraceDecay * newState;
 	
@@ -231,7 +231,7 @@ void kernel layerColumnInhibit(read_only image2d_t columnActivations, read_only 
 		}
 	}
 	
-	float newState = numHigher < localActivity ? 1.0f : 0.0f;
+	float newState = numHigher < localActivity && thisActivation > 0.0f ? 1.0f : 0.0f;
 	
 	write_imagef(columnStates, columnPosition, (float4)(newState, 0.0f, 0.0f, 0.0f));
 }
@@ -259,7 +259,7 @@ void kernel layerColumnInhibitProbablistic(read_only image2d_t columnActivations
 	
 	float probability = numHigher < localActivity ? 1.0f - columnRandomness : columnRandomness;// * (thisActivation > 0.0f ? 1.0f : 0.0f)
 	
-	float newState = randFloat(&seedValue) < probability ? 1.0f : 0.0f;
+	float newState = randFloat(&seedValue) < probability && thisActivation > 0.0f ? 1.0f : 0.0f;
 	
 	write_imagef(columnStates, columnPosition, (float4)(newState, 0.0f, 0.0f, 0.0f));
 }
