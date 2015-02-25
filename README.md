@@ -1,4 +1,4 @@
-# ![CHTMGPU Logo](http://i1218.photobucket.com/albums/dd401/222464/CHTMLOGO.png)
+# ![CHTMGPU Logo](http://i1218.photobucket.com/albums/dd401/222464/CHTMLOGOSMALL.png)
 
 Continuous HTM GPU
 =======
