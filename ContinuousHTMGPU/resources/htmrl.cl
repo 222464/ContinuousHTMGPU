@@ -45,7 +45,7 @@ constant float minLearningThreshold = 0.0f;
 constant float predictionRangeExtension = 0.1f;
 constant float localActivity = 1.0f;
 constant float reconstructionErrorActivity = 2.0f;
-constant float boostThreshold = 0.1f;
+constant float boostThreshold = 0.01f;
 constant float rectifierLeak = 0.03f;
 constant float minDivisor = 0.0001f;
 constant float higherLayerQPower = 16.0f;
@@ -175,7 +175,7 @@ void kernel layerColumnActivate(read_only image2d_t columnStatesInput, read_only
 	}
 	
 	// Bias
-	//float bias = read_imagef(columnFeedForwardWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
+	float bias = read_imagef(columnFeedForwardWeightsPrev, (int4)(columnPosition.x, columnPosition.y, weightIndex, 0)).x;
 	
 	//sum += bias;
 	
@@ -206,7 +206,7 @@ void kernel layerColumnInhibitBinary(read_only image2d_t columnActivations, read
 	
 	float newState = numHigher < localActivity && thisActivation > 0.0f ? 1.0f : 0.0f;//exp(-numHigher * columnIntensity) * sigmoid(thisActivation); //&& thisActivation > 0.0f 
 	
-	float newTrace = (1.0f - columnTraceDecay) * prevTrace + columnTraceDecay * newState;
+	float newTrace = fmax((1.0f - columnTraceDecay) * prevTrace, newState);
 	
 	write_imagef(columnStates, columnPosition, (float4)(newState, newTrace, 0.0f, 0.0f));
 }
@@ -317,7 +317,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t reconstruction, read_onl
 	
 			float2 prevWeight = read_imagef(columnFeedForwardWeightsPrev, weightPosition).xy;
 			
-			float delta = prevWeight.y * columnMomentum + alpha * (input - recon) * thisState + beta * boost * input;
+			float delta = prevWeight.y * columnMomentum + alpha * (input - recon) * thisState + gamma * boost * input;
 			
 			float newWeight = prevWeight.x + delta;
 			
@@ -332,7 +332,7 @@ void kernel layerColumnWeightUpdate(read_only image2d_t reconstruction, read_onl
 
 	float2 prevWeight = read_imagef(columnFeedForwardWeightsPrev, weightPosition).xy;
 	
-	float delta = prevWeight.y * columnMomentum + beta * (thisState - thisStateReconstruction);
+	float delta = prevWeight.y * columnMomentum + beta * (thisState - thisStateReconstruction) + gamma * boost;
 	
 	float newWeight = prevWeight.x + delta;
 	
@@ -390,7 +390,11 @@ void kernel layerCellActivate(read_only image2d_t columnStates, read_only image3
 	float allCellsIncrease = 1.0f - maxCellPrediction;
 	
 	for (int ci = 0; ci < cellsInColumn; ci++) {
+		//float prediction = read_imagef(cellPredictionsPrev, (int4)(columnPosition.x, columnPosition.y, ci, 0)).x;
+		
 		float umodulatedCellState = (1.0f - allCellsIncrease) * (ci == maxCellPredictionIndex ? 1.0f : 0.0f) + allCellsIncrease;
+	
+		//float umodulatedCellState = (1.0f - maximum) * prediction + maximum;
 		
 		float newCellState = umodulatedCellState * columnState;
 	
@@ -432,7 +436,7 @@ void kernel layerCellWeightUpdate(read_only image2d_t columnStates, read_only im
 		for (int i = 0; i < numSegmentsPerCell; i++) {
 			float value = read_imagef(segmentStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci * numSegmentsPerCell + i, 0)).x;
 
-			errors[i] = cellError * (value == cellPredictionPrev.y ? 1.0f : minDerivative);
+			errors[i] = cellError * (value == cellPredictionPrev.y ? 1.0f : value);
 		}
 		
 		// Go through all connections and update them
@@ -533,7 +537,7 @@ void kernel layerCellWeightUpdateLast(read_only image2d_t columnStates, read_onl
 		for (int i = 0; i < numSegmentsPerCell; i++) {
 			float value = read_imagef(segmentStatesPrev, (int4)(columnPosition.x, columnPosition.y, ci * numSegmentsPerCell + i, 0)).x;
 
-			errors[i] = cellError * (value == cellPredictionPrev.y ? 1.0f : minDerivative);
+			errors[i] = cellError * (value == cellPredictionPrev.y ? 1.0f : value);
 		}
 		
 		// Go through all connections and update them
@@ -860,9 +864,9 @@ void kernel reconstructInput(read_only image3d_t columnFeedForwardWeights, read_
 
 	float bias = read_imagef(inputBiases, inputPosition).x;
 				
-	sum += bias;
+	//sum += bias;
 	
-	write_imagef(reconstruction, inputPosition, (float4)(sigmoid(sum), 0.0f, 0.0f, 0.0f));
+	write_imagef(reconstruction, inputPosition, (float4)(sum, 0.0f, 0.0f, 0.0f));
 }
 
 void kernel inputBiasUpdate(read_only image2d_t inputs, read_only image2d_t reconstruction, read_only image2d_t inputBiasesPrev, write_only image2d_t inputBiases, 

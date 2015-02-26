@@ -288,7 +288,7 @@ int main() {
 			agent.setInput(x, y, img.getPixel(x, y).r / 255.0f);
 		}
 
-		agent.step(cs, reward, 0.01f, 0.01f, 0.01f, 0.05f, 0.01f, 0.05f, 0.2f, 0.5f, 0.5f, 0.5f, 0.01f, 0.2f, 0.992f, 0.15f, 0.15f, 120, 10, 2, generator);
+		agent.step(cs, reward, 0.01f, 0.01f, 0.01f, 0.05f, 0.02f, 0.01f, 0.1f, 0.5f, 0.5f, 0.5f, 0.01f, 0.2f, 0.992f, 0.15f, 0.15f, 120, 10, 2, generator);
 
 		float output = 0.0f;
 		int c = 0;
