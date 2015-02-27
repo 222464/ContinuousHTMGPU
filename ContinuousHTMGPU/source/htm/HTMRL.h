@@ -42,7 +42,7 @@ namespace htm {
 			float _qImportance;
 
 			LayerDesc()
-				: _width(16), _height(16), _receptiveFieldRadius(3), _lateralConnectionRadius(4), _inhibitionRadius(2), _cellsInColumn(3), _numSegmentsPerCell(4),
+				: _width(16), _height(16), _receptiveFieldRadius(3), _lateralConnectionRadius(3), _inhibitionRadius(2), _cellsInColumn(3), _numSegmentsPerCell(4),
 				_qInfluenceMultiplier(1.0f), _numColumnStateBlurPasses(1), _columnStateBlurKernelWidthMultiplier(1.0f), _columnInfluenceRadius(5), _qImportance(1.0f)
 			{}
 		};
@@ -57,11 +57,6 @@ namespace htm {
 	
 			cl::Image2D _columnStatesPrev;
 			cl::Image2D _columnStates;
-
-			cl::Image2D _columnStatesProbabilistic;
-
-			cl::Image2D _columnActivationReconstruction;
-			cl::Image2D _columnStateReconstruction;
 
 			cl::Image2D _inputBiasesPrev;
 			cl::Image2D _inputBiases;
@@ -107,9 +102,7 @@ namespace htm {
 		std::vector<Layer> _layers;
 
 		cl::Kernel _layerColumnActivateKernel;
-		cl::Kernel _layerColumnInhibitBinaryKernel;
 		cl::Kernel _layerColumnInhibitKernel;
-		cl::Kernel _layerColumnInhibitProbablisticKernel;
 		cl::Kernel _layerCellActivateKernel;
 		cl::Kernel _layerCellWeightUpdateKernel;
 		cl::Kernel _layerCellWeightUpdateLastKernel;

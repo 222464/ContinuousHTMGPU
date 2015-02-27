@@ -87,9 +87,7 @@ void HTMRL::createRandom(sys::ComputeSystem &cs, sys::ComputeProgram &program, i
 	}
 
 	_layerColumnActivateKernel = cl::Kernel(program.getProgram(), "layerColumnActivate");
-	_layerColumnInhibitBinaryKernel = cl::Kernel(program.getProgram(), "layerColumnInhibitBinary");
 	_layerColumnInhibitKernel = cl::Kernel(program.getProgram(), "layerColumnInhibit");
-	_layerColumnInhibitProbablisticKernel = cl::Kernel(program.getProgram(), "layerColumnInhibitProbablistic");
 	_layerCellActivateKernel = cl::Kernel(program.getProgram(), "layerCellActivate");
 	_layerCellWeightUpdateKernel = cl::Kernel(program.getProgram(), "layerCellWeightUpdate");
 	_layerCellWeightUpdateLastKernel = cl::Kernel(program.getProgram(), "layerCellWeightUpdateLast");
@@ -133,11 +131,6 @@ void HTMRL::initLayer(sys::ComputeSystem &cs, cl::Kernel &initPartOneKernel, cl:
 	layer._columnStates = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height);
 	layer._columnStatesPrev = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height);
 	
-	layer._columnStatesProbabilistic = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
-
-	layer._columnStateReconstruction = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
-	layer._columnActivationReconstruction = cl::Image2D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_R, CL_FLOAT), layerDesc._width, layerDesc._height);
-
 	layer._columnFeedForwardWeights = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height, receptiveFieldSize);
 	layer._columnFeedForwardWeightsPrev = cl::Image3D(cs.getContext(), CL_MEM_READ_WRITE, cl::ImageFormat(CL_RG, CL_FLOAT), layerDesc._width, layerDesc._height, receptiveFieldSize);
 
@@ -545,30 +538,17 @@ void HTMRL::spatialPoolLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutpu
 
 	int receptiveFieldSize = std::pow(layerDesc._receptiveFieldRadius * 2 + 1, 2) + 1;
 
-	// Inhibition - not probablistic
-	_layerColumnInhibitBinaryKernel.setArg(0, layer._columnActivations);
-	_layerColumnInhibitBinaryKernel.setArg(1, layer._columnStatesPrev);
-	_layerColumnInhibitBinaryKernel.setArg(2, layer._columnFeedForwardWeightsPrev);
-	_layerColumnInhibitBinaryKernel.setArg(3, layer._columnStates);
-	_layerColumnInhibitBinaryKernel.setArg(4, layerSize);
-	_layerColumnInhibitBinaryKernel.setArg(5, layerSizeInv);
-	_layerColumnInhibitBinaryKernel.setArg(6, layerInhibitionRadius);
-	_layerColumnInhibitBinaryKernel.setArg(7, receptiveFieldSize);
-
-	cs.getQueue().enqueueNDRangeKernel(_layerColumnInhibitBinaryKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
-
 	// Inhibition
-	/*_layerColumnInhibitProbablisticKernel.setArg(0, layer._columnActivations);
-	_layerColumnInhibitProbablisticKernel.setArg(1, layer._columnStatesPrev);
-	_layerColumnInhibitProbablisticKernel.setArg(2, layer._columnFeedForwardWeightsPrev);
-	_layerColumnInhibitProbablisticKernel.setArg(3, layer._columnStatesProbabilistic);
-	_layerColumnInhibitProbablisticKernel.setArg(4, layerSize);
-	_layerColumnInhibitProbablisticKernel.setArg(5, layerSizeInv);
-	_layerColumnInhibitProbablisticKernel.setArg(6, layerInhibitionRadius);
-	_layerColumnInhibitProbablisticKernel.setArg(7, receptiveFieldSize);
-	_layerColumnInhibitProbablisticKernel.setArg(8, seed2);
+	_layerColumnInhibitKernel.setArg(0, layer._columnActivations);
+	_layerColumnInhibitKernel.setArg(1, layer._columnStatesPrev);
+	_layerColumnInhibitKernel.setArg(2, layer._columnFeedForwardWeightsPrev);
+	_layerColumnInhibitKernel.setArg(3, layer._columnStates);
+	_layerColumnInhibitKernel.setArg(4, layerSize);
+	_layerColumnInhibitKernel.setArg(5, layerSizeInv);
+	_layerColumnInhibitKernel.setArg(6, layerInhibitionRadius);
+	_layerColumnInhibitKernel.setArg(7, receptiveFieldSize);
 
-	cs.getQueue().enqueueNDRangeKernel(_layerColumnInhibitProbablisticKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));*/
+	cs.getQueue().enqueueNDRangeKernel(_layerColumnInhibitKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
 	Float2 inputSizeMinusOneInv;
 	inputSizeMinusOneInv._x = 1.0f / (prevLayerWidth - 1);
@@ -596,33 +576,6 @@ void HTMRL::spatialPoolLayer(sys::ComputeSystem &cs, cl::Image2D &prevLayerOutpu
 	_reconstructInputKernel.setArg(10, layerSizeMinusOneInv);
 
 	cs.getQueue().enqueueNDRangeKernel(_reconstructInputKernel, cl::NullRange, cl::NDRange(prevLayerWidth, prevLayerHeight));
-
-	// Activate from reconstruction to get stateReconstruction
-
-	// Activation
-	_layerColumnActivateKernel.setArg(0, layer._reconstruction);
-	_layerColumnActivateKernel.setArg(1, layer._columnFeedForwardWeightsPrev);
-	_layerColumnActivateKernel.setArg(2, layer._columnStatesPrev);
-	_layerColumnActivateKernel.setArg(3, layer._columnActivationReconstruction);
-	_layerColumnActivateKernel.setArg(4, layerSizeMinusOneInv);
-	_layerColumnActivateKernel.setArg(5, inputReceptiveFieldRadius);
-	_layerColumnActivateKernel.setArg(6, inputSize);
-	_layerColumnActivateKernel.setArg(7, inputSizeMinusOne);
-	_layerColumnActivateKernel.setArg(8, seed3);
-
-	cs.getQueue().enqueueNDRangeKernel(_layerColumnActivateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
-
-	// Inhibition
-	_layerColumnInhibitKernel.setArg(0, layer._columnActivationReconstruction);
-	_layerColumnInhibitKernel.setArg(1, layer._columnStatesPrev);
-	_layerColumnInhibitKernel.setArg(2, layer._columnFeedForwardWeightsPrev);
-	_layerColumnInhibitKernel.setArg(3, layer._columnStateReconstruction);
-	_layerColumnInhibitKernel.setArg(4, layerSize);
-	_layerColumnInhibitKernel.setArg(5, layerSizeInv);
-	_layerColumnInhibitKernel.setArg(6, layerInhibitionRadius);
-	_layerColumnInhibitKernel.setArg(7, receptiveFieldSize);
-
-	cs.getQueue().enqueueNDRangeKernel(_layerColumnInhibitKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 }
 
 void HTMRL::cellActivateLayer(sys::ComputeSystem &cs, Layer &layer, const LayerDesc &layerDesc, float cellStateDecay, std::mt19937 &generator) {
@@ -1009,25 +962,23 @@ void HTMRL::learnLayerSpatial(sys::ComputeSystem &cs, Layer &layer, cl::Image2D 
 
 	// Column weight update
 	_layerColumnWeightUpdateKernel.setArg(0, layer._reconstruction);
-	_layerColumnWeightUpdateKernel.setArg(1, layer._columnStateReconstruction);
-	_layerColumnWeightUpdateKernel.setArg(2, prevLayerOutput);
-	_layerColumnWeightUpdateKernel.setArg(3, layer._columnActivations);
-	_layerColumnWeightUpdateKernel.setArg(4, layer._columnStatesProbabilistic);
-	_layerColumnWeightUpdateKernel.setArg(5, layer._columnStates);
-	_layerColumnWeightUpdateKernel.setArg(6, layer._columnPredictions);
-	_layerColumnWeightUpdateKernel.setArg(7, layer._columnFeedForwardWeightsPrev);
-	_layerColumnWeightUpdateKernel.setArg(8, layer._columnFeedForwardWeights);
-	_layerColumnWeightUpdateKernel.setArg(9, layerSize);
-	_layerColumnWeightUpdateKernel.setArg(10, layerSizeMinusOneInv);
-	_layerColumnWeightUpdateKernel.setArg(11, inputReceptiveFieldRadius);
-	_layerColumnWeightUpdateKernel.setArg(12, inhibitionRadii);
-	_layerColumnWeightUpdateKernel.setArg(13, inputSize);
-	_layerColumnWeightUpdateKernel.setArg(14, inputSizeMinusOne);
-	_layerColumnWeightUpdateKernel.setArg(15, receptiveFieldSize);
-	_layerColumnWeightUpdateKernel.setArg(16, alpha);
-	_layerColumnWeightUpdateKernel.setArg(17, beta);
-	_layerColumnWeightUpdateKernel.setArg(18, gamma);
-	_layerColumnWeightUpdateKernel.setArg(19, seed);
+	_layerColumnWeightUpdateKernel.setArg(1, prevLayerOutput);
+	_layerColumnWeightUpdateKernel.setArg(2, layer._columnActivations);
+	_layerColumnWeightUpdateKernel.setArg(3, layer._columnStates);
+	_layerColumnWeightUpdateKernel.setArg(4, layer._columnPredictions);
+	_layerColumnWeightUpdateKernel.setArg(5, layer._columnFeedForwardWeightsPrev);
+	_layerColumnWeightUpdateKernel.setArg(6, layer._columnFeedForwardWeights);
+	_layerColumnWeightUpdateKernel.setArg(7, layerSize);
+	_layerColumnWeightUpdateKernel.setArg(8, layerSizeMinusOneInv);
+	_layerColumnWeightUpdateKernel.setArg(9, inputReceptiveFieldRadius);
+	_layerColumnWeightUpdateKernel.setArg(10, inhibitionRadii);
+	_layerColumnWeightUpdateKernel.setArg(11, inputSize);
+	_layerColumnWeightUpdateKernel.setArg(12, inputSizeMinusOne);
+	_layerColumnWeightUpdateKernel.setArg(13, receptiveFieldSize);
+	_layerColumnWeightUpdateKernel.setArg(14, alpha);
+	_layerColumnWeightUpdateKernel.setArg(15, beta);
+	_layerColumnWeightUpdateKernel.setArg(16, gamma);
+	_layerColumnWeightUpdateKernel.setArg(17, seed);
 
 	cs.getQueue().enqueueNDRangeKernel(_layerColumnWeightUpdateKernel, cl::NullRange, cl::NDRange(layerDesc._width, layerDesc._height));
 
